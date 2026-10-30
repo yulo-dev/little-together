@@ -444,6 +444,90 @@ async function timeAndAnimalTests() {
   await Promise.all([ctxS.close(), ctxT.close(), ctxN.close()]);
 }
 
+// ---------------- Drawing never gets stuck ----------------
+async function recoveryTests() {
+  // R1: the network eats the final line. The canvas must hand control back.
+  const ctx = await laptop();
+  const page = await ctx.newPage();
+  let dropped = false;
+  await page.routeWebSocket(/\/ws$/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((m) => {
+      if (!dropped && typeof m === "string" && m.includes('"t":"stroke"') && m.includes('"step":3')) {
+        dropped = true; // swallow it: the server never hears about this line
+        return;
+      }
+      server.send(m);
+    });
+  });
+  const code = await createRoom(page);
+  await pickAndEnter(page, "fox");
+  await page.getByTestId("open-drawing").click();
+  await page.getByTestId("canvas").waitFor();
+  await page.getByTestId("template-bunny").click();
+  await page.waitForSelector('[data-testid="canvas"][data-template="bunny"]');
+  for (let i = 0; i < 3; i++) {
+    await drawOn(page, BUNNY[i]);
+    await waitStrokes(page, i + 1);
+  }
+  await drawOn(page, BUNNY[3]);
+  const wasPending = await page.waitForSelector('[data-testid="canvas"][data-pending="true"]', { timeout: 2000 }).then(
+    () => true,
+    () => false,
+  );
+  const released = await page.waitForSelector('[data-testid="canvas"][data-pending="false"]', { timeout: 6000 }).then(
+    () => true,
+    () => false,
+  );
+  await drawOn(page, BUNNY[3]);
+  const finished = await page
+    .getByTestId("creation-show")
+    .waitFor({ timeout: 5000 })
+    .then(
+      () => true,
+      () => false,
+    );
+  check(
+    "R1 a lost final line frees the canvas so the child can draw it again",
+    dropped && wasPending && released && finished,
+  );
+  await page
+    .getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+
+  // R2: a device that looks online but never draws (a sleeping phone) can't hold the turn forever.
+  const url = BASE.replace(/^http/, "ws") + `/api/rooms/${code}/ws`;
+  const ghost = new WebSocket(url);
+  await new Promise((r) => (ghost.onopen = r));
+  ghost.send(JSON.stringify({ t: "hello", pid: "sleeping-phone-0001", avatar: "panda", lastSeen: 0 }));
+  await page
+    .waitForSelector('[data-testid="online"] li:nth-child(2), header li:nth-child(2)', { timeout: 5000 })
+    .catch(() => {});
+  await page.waitForTimeout(500);
+  await drawOn(page, FISH[0]);
+  await waitStrokes(page, 1);
+  await page.waitForTimeout(400);
+  const waiting = !(await myTurn(page));
+  const t0 = Date.now();
+  const freed = await page.waitForSelector('[data-testid="canvas"][data-my-turn="true"]', { timeout: 20_000 }).then(
+    () => true,
+    () => false,
+  );
+  await drawOn(page, FISH[1]);
+  const landed = await waitStrokes(page, 2).then(
+    () => true,
+    () => false,
+  );
+  ghost.close();
+  check(
+    "R2 a player who never draws can't hold the turn forever",
+    waiting && freed && landed,
+    `turn opened after ${Math.round((Date.now() - t0) / 1000)} s`,
+  );
+  await ctx.close();
+}
+
 async function run() {
   browser = await chromium.launch();
 
@@ -650,6 +734,7 @@ async function run() {
 
   await drawingTests();
   await timeAndAnimalTests();
+  await recoveryTests();
 
   await browser.close();
 

@@ -88,6 +88,8 @@ export interface Drawing {
   strokes: Stroke[];
   /** player id whose turn it is; null means anyone may draw */
   turn: string | null;
+  /** server time the current turn started (absent in drawings saved before turn timeouts) */
+  turnAt?: number;
 }
 
 export interface Creation {
@@ -132,12 +134,17 @@ export function stepCount(d: Pick<Drawing, "template">): number {
   return TEMPLATES[d.template].length;
 }
 
+/** After this long without a line from the player whose turn it is, anyone may draw. */
+export const TURN_TIMEOUT_MS = 15_000;
+
 /**
  * Turn rule used by both sides: the named player draws next, unless they are
- * offline (or it is them asking). Nobody ever waits on someone who isn't here.
+ * offline, or haven't drawn for a while (a phone left asleep can still look
+ * online). Nobody ever waits long on someone who isn't really there.
  */
-export function canDraw(d: Drawing, pid: string, online: OnlinePlayer[]): boolean {
+export function canDraw(d: Drawing, pid: string, online: OnlinePlayer[], now = Date.now()): boolean {
   if (d.turn === null || d.turn === pid) return true;
+  if (d.turnAt !== undefined && now - d.turnAt >= TURN_TIMEOUT_MS) return true;
   return !online.some((p) => p.pid === d.turn);
 }
 

@@ -18,7 +18,7 @@ import { Animal } from "../components/Animal";
 import { CreationArt } from "../components/CreationArt";
 import { PlayerAvatar } from "../components/PlayerAvatar";
 import { Scene } from "../components/Scene";
-import { useLocalPhase } from "../lib/time";
+import { useLocalPhase, useNow } from "../lib/time";
 import { useT } from "../i18n";
 import { sfx } from "../lib/sound";
 import type { Profile } from "../lib/storage";
@@ -58,7 +58,8 @@ export function MagicDrawing({
 
   const steps = drawing ? TEMPLATES[drawing.template] : [];
   const step = drawing ? steps[drawing.step] : undefined;
-  const myTurn = !!drawing && status === "open" && canDraw(drawing, me.pid, online);
+  const now = useNow(1000); // turns can time out, so re-check every second
+  const myTurn = !!drawing && status === "open" && canDraw(drawing, me.pid, online, now);
   const turnHolder = drawing?.turn ? online.find((p) => p.pid === drawing.turn) : undefined;
 
   // A little chime when the turn comes back to me.
@@ -277,9 +278,29 @@ function Canvas({
   const [pending, setPending] = useState<number[] | null>(null);
   const [shake, setShake] = useState(0);
 
-  // Whatever the server says next (accepted, rejected, someone else's stroke)
-  // replaces our pending preview.
-  useEffect(() => setPending(null), [drawing.id, drawing.step, drawing.strokes.length]);
+  const sentAt = useRef<{ id: string; strokes: number } | null>(null);
+
+  // Any answer from the server (accepted, rejected, someone else's line, a
+  // reconnect) replaces our pending preview. If our line didn't land, shake so
+  // the child knows to just draw again.
+  useEffect(() => {
+    const sent = sentAt.current;
+    sentAt.current = null;
+    setPending(null);
+    if (sent && sent.id === drawing.id && sent.strokes === drawing.strokes.length) setShake((n) => n + 1);
+  }, [drawing]);
+
+  // Never leave a child staring at a line that will not land (lost message,
+  // dropped connection): give the canvas back after a few seconds.
+  useEffect(() => {
+    if (!pending) return;
+    const id = window.setTimeout(() => {
+      sentAt.current = null;
+      setPending(null);
+      setShake((n) => n + 1);
+    }, 4000);
+    return () => window.clearTimeout(id);
+  }, [pending]);
 
   const toCanvas = (e: React.PointerEvent) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -312,6 +333,7 @@ function Canvas({
     if (p.length === 2) p = [p[0], p[1], p[0], p[1]]; // a tap is a dot, and a dot counts
     setLive(null);
     if (onStroke(drawing, color, p)) {
+      sentAt.current = { id: drawing.id, strokes: drawing.strokes.length };
       setPending(p);
       sfx.sun();
     }
@@ -328,6 +350,7 @@ function Canvas({
         data-step={drawing.step}
         data-strokes={drawing.strokes.length}
         data-template={drawing.template}
+        data-pending={pending ? "true" : "false"}
         data-my-turn={enabled}
         className={`card block aspect-square w-full touch-none select-none ${enabled ? "cursor-crosshair" : "cursor-not-allowed"}`}
         style={{ background: "#FFFDF7" }}

@@ -213,7 +213,12 @@ export class GardenRoom extends DurableObject<Env> {
       return;
     }
     if (!msg || typeof msg !== "object") return;
-    if (!this.takeToken(ws)) return;
+    if (!this.takeToken(ws)) {
+      // A dropped line must still get an answer, or the drawer waits forever.
+      if (msg.t === "stroke")
+        this.send(ws, { t: "drawReject", aid: "", reason: "rate_limited", drawing: this.drawing });
+      return;
+    }
 
     const me = ws.deserializeAttachment() as Attachment;
 
@@ -356,14 +361,14 @@ export class GardenRoom extends DurableObject<Env> {
     // drawing and step it saw, so two strokes racing for one step can't both land.
     if (msg.drawingId !== this.drawing.id || msg.step !== this.drawing.step) return reject("stale");
     const online = this.online();
-    if (!canDraw(this.drawing, me.pid, online)) return reject("not_your_turn");
-
     const now = Date.now();
+    if (!canDraw(this.drawing, me.pid, online, now)) return reject("not_your_turn");
+
     const strokes = [...this.drawing.strokes, { by: me.pid, avatar: me.avatar, color: msg.color, pts: msg.pts }];
     const step = this.drawing.step + 1;
 
     if (step < stepCount(this.drawing)) {
-      this.drawing = { ...this.drawing, strokes, step, turn: nextTurn(me.pid, online) };
+      this.drawing = { ...this.drawing, strokes, step, turn: nextTurn(me.pid, online), turnAt: now };
       this.meta = { ...this.meta, lastActivity: now };
       await this.ctx.storage.put({ drawing: this.drawing, meta: this.meta });
       await this.ctx.storage.setAlarm(now + this.retentionMs());

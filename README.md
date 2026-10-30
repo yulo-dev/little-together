@@ -27,7 +27,8 @@ A shared canvas where the family draws an animal together, taking turns, and the
 
 - **Pick an animal.** Before the first line, anyone can tap fish, bunny or butterfly. The choice syncs to everyone and locks once drawing starts.
 - **Guided, four lines.** A dashed hint shows the next part (fish: body, tail, fin, stripes; bunny: body, head, ears, tail; butterfly: body, two wings, antennae). One line finishes a step, so a wobbly scribble or a single tap still counts.
-- **Turns that never block.** After you draw, the turn passes to the next player who is online. If you're alone, or the next player has left, anyone can draw.
+- **Turns that never block.** After you draw, the turn passes to the next player who is online. If you're alone, the next player has left, or they haven't drawn for 15 seconds (a phone asleep on the couch can still look online), anyone can draw.
+- **Never stuck mid-line.** If a line is refused or lost on the network, the canvas shakes and hands control back within a few seconds so the child can just draw it again.
 - **Their lines come alive.** The finished animal is built from the players' own strokes: a fish's tail wags and fin flaps, a bunny hops and wiggles its ears, a butterfly's wings flap. Only small faces are added. It plays across every screen in the room at once.
 - **Saved, and alive in the garden.** Creations go into the room's gallery (last 24). The three newest of each kind live in the garden: fish swim in the pond (tap one and it jumps), bunnies hop along the bank, butterflies drift across the sky. Finishing a fish also shows up in Welcome Back for family who were away. An empty pond shows a dotted fish and opens Magic Drawing.
 
@@ -158,9 +159,10 @@ Each player is a separate browser context (separate storage and socket), emulati
 | M9–M11 | Creations persist after everyone leaves and can be replayed; the garden still works afterwards |
 | M12–M13 | A finished fish appears in the garden pond and jumps when tapped; a new device sees the same pond |
 | M14–M18 | The chosen animal syncs; bunnies hop and butterflies fly in the garden; the animal is locked after the first line; a new device sees them |
+| R1–R2 | A final line lost on the network frees the canvas for a redraw; a player who never draws can't hold the turn |
 | T1–T2 | A Seattle laptop and a Taipei phone each get their own sky, and each sees the other's sun or moon |
 
-Latest local run: **45/45 passed**. Tap-to-other-screen latency was about 120 ms median locally; a stroke appeared on the other device about 50 ms after pointer-up. The garden suite also passed 25/25 against the deployed Cloudflare URL. Persistence across a full server restart was checked manually.
+Latest local run: **47/47 passed**. Tap-to-other-screen latency was about 120 ms median locally; a stroke appeared on the other device about 50 ms after pointer-up. The garden suite also passed 25/25 against the deployed Cloudflare URL. Persistence across a full server restart was checked manually.
 
 ### Known limitations
 
