@@ -116,7 +116,7 @@ const en: typeof zh = {
 };
 
 const dict = { zh, en };
-let current: Lang = load<Lang>("lt:lang", "zh"); // Traditional Chinese by default
+let current: Lang = load<Lang>("lt:lang", "en"); // English by default; 中文 is one tap away
 document.documentElement.lang = current === "zh" ? "zh-Hant" : "en";
 const listeners = new Set<() => void>();
 
