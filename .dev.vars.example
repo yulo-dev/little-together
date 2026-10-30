@@ -1,0 +1,3 @@
+# Optional. Copy to .dev.vars to override values from wrangler.jsonc during `wrangler dev`.
+# No secrets are required to run Little Together.
+RETENTION_DAYS=30

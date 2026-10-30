@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "little-together",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "GARDEN", "class_name": "GardenRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GardenRoom"] }],
+  "vars": {
+    // Inactive gardens are deleted after this many days without activity.
+    "RETENTION_DAYS": "30"
+  },
+  "observability": { "enabled": true }
+}
