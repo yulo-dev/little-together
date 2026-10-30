@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMsg, GardenEvent, GardenState, OnlinePlayer, ServerMsg, Stage } from "../../shared/protocol";
+import type { Creation, Drawing } from "../../shared/drawing";
 import { newId, saveProfile, type Profile } from "./storage";
 
 export type Status = "connecting" | "open" | "reconnecting" | "gone";
@@ -7,7 +8,8 @@ export type Status = "connecting" | "open" | "reconnecting" | "gone";
 export type RoomFx =
   | { kind: "event"; event: GardenEvent; mine: boolean }
   | { kind: "heart"; avatar: string }
-  | { kind: "dance"; plotId: number; avatar: string };
+  | { kind: "dance"; plotId: number; avatar: string }
+  | { kind: "drawDone"; creation: Creation; mine: boolean };
 
 const PING_MS = 20_000;
 const DEAD_MS = 45_000;
@@ -22,6 +24,8 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
   const [garden, setGarden] = useState<GardenState | null>(null);
   const [online, setOnline] = useState<OnlinePlayer[]>([]);
   const [missed, setMissed] = useState<GardenEvent[] | null>(null);
+  const [drawing, setDrawing] = useState<Drawing | null>(null);
+  const [gallery, setGallery] = useState<Creation[] | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const fxRef = useRef(onFx);
@@ -79,6 +83,7 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
             setStatus("open");
             setGarden(msg.state);
             setOnline(msg.online);
+            if (msg.drawing) setDrawing(msg.drawing);
             if (firstWelcome) {
               firstWelcome = false;
               setMissed(msg.missed.length ? msg.missed : null);
@@ -98,6 +103,24 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
             break;
           case "presence":
             setOnline(msg.online);
+            break;
+          case "draw":
+            myAids.current.delete(msg.aid);
+            setDrawing(msg.drawing);
+            break;
+          case "drawReject":
+            myAids.current.delete(msg.aid);
+            setDrawing(msg.drawing);
+            break;
+          case "drawDone": {
+            const mine = myAids.current.delete(msg.aid);
+            setDrawing(msg.drawing);
+            setGallery((g) => (g ? [...g, msg.creation] : g));
+            fxRef.current({ kind: "drawDone", creation: msg.creation, mine });
+            break;
+          }
+          case "gallery":
+            setGallery(msg.items);
             break;
           case "fx":
             if (msg.kind === "heart") fxRef.current({ kind: "heart", avatar: msg.avatar });
@@ -199,6 +222,16 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
   }, []);
 
   const heart = useCallback(() => send({ t: "heart" }), []);
+  const stroke = useCallback((d: Drawing, color: number, pts: number[]) => {
+    const aid = newId();
+    myAids.current.add(aid);
+    if (!send({ t: "stroke", aid, drawingId: d.id, step: d.step, color, pts })) {
+      myAids.current.delete(aid);
+      return false;
+    }
+    return true;
+  }, []);
+  const loadGallery = useCallback(() => send({ t: "gallery" }), []);
   const dance = useCallback((plotId: number) => send({ t: "dance", plotId }), []);
   const newSeason = useCallback(() => {
     const aid = newId();
@@ -206,5 +239,19 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
     return send({ t: "season", aid });
   }, []);
 
-  return { status, garden, online, missed, clearMissed: () => setMissed(null), act, heart, dance, newSeason };
+  return {
+    status,
+    garden,
+    online,
+    missed,
+    clearMissed: () => setMissed(null),
+    act,
+    heart,
+    dance,
+    newSeason,
+    drawing,
+    gallery,
+    stroke,
+    loadGallery,
+  };
 }

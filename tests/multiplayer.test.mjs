@@ -16,6 +16,7 @@ try {
   pw = require(`${execSync("npm root -g").toString().trim()}/playwright`);
 }
 const { chromium, devices } = pw;
+const { FISH, drawOn } = await import("./draw-helpers.mjs");
 import { mkdirSync } from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:8787";
@@ -113,6 +114,187 @@ async function protocolRace(code) {
   return { ok: accepted === 4 && rejected === 4, detail: `accepted=${accepted} rejected=${rejected} over 4 rounds` };
 }
 
+// ---------------- Magic Drawing ----------------
+const strokes = (page) => page.getByTestId("canvas").getAttribute("data-strokes").then(Number);
+const myTurn = (page) =>
+  page
+    .getByTestId("canvas")
+    .getAttribute("data-my-turn")
+    .then((v) => v === "true");
+const waitStrokes = (page, n, timeout = 5000) =>
+  page.waitForSelector(`[data-testid="canvas"][data-strokes="${n}"]`, { timeout });
+
+async function drawingRace(code) {
+  const url = BASE.replace(/^http/, "ws") + `/api/rooms/${code}/ws`;
+  const open = (pid, avatar) =>
+    new Promise((resolve, reject) => {
+      const ws = new WebSocket(url);
+      const inbox = [];
+      ws.onmessage = (e) => e.data !== "pong" && inbox.push(JSON.parse(e.data));
+      ws.onopen = () => ws.send(JSON.stringify({ t: "hello", pid, avatar, lastSeen: 0 }));
+      const iv = setInterval(() => {
+        const w = inbox.find((m) => m.t === "welcome");
+        if (w) {
+          clearInterval(iv);
+          resolve({ ws, inbox, drawing: w.drawing });
+        }
+      }, 20);
+      ws.onerror = reject;
+    });
+  const a = await open("draw-race-aaaa", "cat");
+  const b = await open("draw-race-bbbb", "fox");
+  await new Promise((r) => setTimeout(r, 300));
+  const d = a.drawing;
+  const pts = [100, 100, 200, 200, 300, 150];
+  a.ws.send(JSON.stringify({ t: "stroke", aid: "ra", drawingId: d.id, step: 0, color: 1, pts }));
+  b.ws.send(JSON.stringify({ t: "stroke", aid: "rb", drawingId: d.id, step: 0, color: 2, pts }));
+  await new Promise((r) => setTimeout(r, 500));
+  const accepted = a.inbox.filter((m) => m.t === "draw").length;
+  const rejected = [...a.inbox, ...b.inbox].filter((m) => m.t === "drawReject").length;
+  const last = a.inbox.filter((m) => m.t === "draw").at(-1)?.drawing;
+  // Bad payloads are refused too.
+  b.ws.send(JSON.stringify({ t: "stroke", aid: "bad", drawingId: d.id, step: 1, color: 99, pts }));
+  b.ws.send(JSON.stringify({ t: "stroke", aid: "bad2", drawingId: d.id, step: 1, color: 0, pts: [1, 2, 3] }));
+  await new Promise((r) => setTimeout(r, 400));
+  const badRejected = b.inbox.filter((m) => m.t === "drawReject" && m.reason === "bad_stroke").length;
+  a.ws.close();
+  b.ws.close();
+  return {
+    ok: accepted === 1 && rejected === 1 && last?.strokes.length === 1 && badRejected === 2,
+    detail: `accepted=${accepted} rejected=${rejected} strokes=${last?.strokes.length} invalidRejected=${badRejected}`,
+  };
+}
+
+async function drawingTests() {
+  const ctxL = await laptop();
+  const ctxP = await phone();
+  const L = await ctxL.newPage();
+  const P = await ctxP.newPage();
+  const code = await createRoom(L);
+  await pickAndEnter(L, "bunny");
+  await joinByLink(P, code, "bear");
+  await L.getByTestId("open-drawing").click();
+  await P.getByTestId("open-drawing").click();
+  await Promise.all([L.getByTestId("canvas").waitFor(), P.getByTestId("canvas").waitFor()]);
+  await L.waitForSelector('[data-testid="canvas"][data-my-turn="true"]');
+
+  await drawOn(L, FISH[0]);
+  const t0 = Date.now(); // after pointer-up, so the drag itself isn't counted
+  await waitStrokes(P, 1);
+  const strokeMs = Date.now() - t0;
+  check("M1 stroke drawn on laptop appears on phone within 2 s", strokeMs < 2000, `${strokeMs} ms after pointer-up`);
+  await L.waitForTimeout(300);
+  check("M2 turn passes to the other player", !(await myTurn(L)) && (await myTurn(P)));
+
+  await drawOn(L, FISH[1]); // not laptop's turn: must be ignored
+  await L.waitForTimeout(700);
+  check("M3 drawing out of turn is blocked", (await strokes(L)) === 1 && (await strokes(P)) === 1);
+
+  await drawOn(P, FISH[1]);
+  await waitStrokes(L, 2);
+  await drawOn(L, FISH[2]);
+  await waitStrokes(P, 3);
+  const showL = L.getByTestId("creation-show")
+    .waitFor({ timeout: 6000 })
+    .then(
+      () => true,
+      () => false,
+    );
+  const showP = P.getByTestId("creation-show")
+    .waitFor({ timeout: 6000 })
+    .then(
+      () => true,
+      () => false,
+    );
+  await drawOn(P, FISH[3]);
+  const [sl, sp] = await Promise.all([showL, showP]);
+  check("M4 finished fish comes to life on both devices", sl && sp);
+  await Promise.all([waitStrokes(L, 0), waitStrokes(P, 0)]);
+  check("M5 both canvases reset for the next drawing", true);
+  await L.getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+  await P.getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+
+  // Turn holder leaves: the remaining player must never be stuck waiting.
+  await drawOn(L, FISH[0]);
+  await waitStrokes(P, 1);
+  await P.waitForTimeout(300);
+  const blockedBefore = !(await myTurn(L));
+  await P.close();
+  await L.waitForSelector('[data-testid="canvas"][data-my-turn="true"]', { timeout: 5000 });
+  check("M6 if the next player leaves, the turn opens up", blockedBefore);
+
+  // Solo: one player can finish alone (asynchronous play).
+  for (const i of [1, 2, 3]) {
+    if (i === 3) {
+      const done = L.getByTestId("creation-show")
+        .waitFor({ timeout: 6000 })
+        .then(
+          () => true,
+          () => false,
+        );
+      await drawOn(L, FISH[i]);
+      check("M7 a single player can finish a drawing alone", await done);
+    } else {
+      await drawOn(L, FISH[i]);
+      await waitStrokes(L, i + 1);
+    }
+  }
+  await L.getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+
+  const race = await drawingRace(
+    await (await fetch(`${BASE}/api/rooms`, { method: "POST" })).json().then((j) => j.code),
+  );
+  check("M8 concurrent strokes for one step: exactly one lands; invalid strokes refused", race.ok, race.detail);
+
+  await ctxL.close();
+  await ctxP.close();
+
+  // Everyone gone: a brand-new device sees the saved creations.
+  const ctxN = await tablet();
+  const N = await ctxN.newPage();
+  await joinByLink(N, code, "duck");
+  await N.getByTestId("open-drawing").click();
+  await N.getByTestId("open-gallery").click();
+  await N.getByTestId("gallery-item")
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => {});
+  const items = await N.getByTestId("gallery-item").count();
+  check("M9 creations persist and returning players can view them", items === 2, `gallery=${items}`);
+  await N.screenshot({ path: `${SHOTS}08-gallery-tablet.png` });
+  await N.getByTestId("gallery-item").first().click();
+  check(
+    "M10 tapping a saved creation plays it again",
+    await N.getByTestId("creation-show")
+      .waitFor({ timeout: 3000 })
+      .then(
+        () => true,
+        () => false,
+      ),
+  );
+  await N.getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+
+  // Garden still works in the same room after drawing.
+  await N.getByTestId("back-to-garden").click();
+  await N.getByTestId("plot-0").click();
+  check(
+    "M11 garden still works after Magic Drawing",
+    await waitStage(N, 0, 1).then(
+      () => true,
+      () => false,
+    ),
+  );
+  await ctxN.close();
+}
+
 async function run() {
   browser = await chromium.launch();
 
@@ -127,7 +309,9 @@ async function run() {
   await L.getByTestId("avatar-bunny").click();
   await L.getByTestId("join-submit").click();
   await L.getByTestId("enter-garden").waitFor();
-  await L.getByText(/[A-Z0-9]{4}-[A-Z0-9]{4}/).first().waitFor();
+  await L.getByText(/[A-Z0-9]{4}-[A-Z0-9]{4}/)
+    .first()
+    .waitFor();
   await L.screenshot({ path: `${SHOTS}02-lobby-laptop.png` });
   await L.getByTestId("enter-garden").click();
   await L.getByTestId("garden").waitFor();
@@ -144,12 +328,24 @@ async function run() {
   check("A3 laptop waters, phone updates", true, `${ms} ms`);
   ms = await tapAndObserve(P, L, 0, 3);
   check("A4 phone gives sunshine, laptop updates", true, `${ms} ms`);
-  const sharedFx = L.locator(".twin").first().waitFor({ timeout: 4000 }).then(() => true, () => false);
+  const sharedFx = L.locator(".twin")
+    .first()
+    .waitFor({ timeout: 4000 })
+    .then(
+      () => true,
+      () => false,
+    );
   ms = await tapAndObserve(L, P, 0, 4);
   check("A5 laptop makes it bloom, phone updates", true, `${ms} ms`);
   check("A6 cooperative bloom shows shared celebration", await sharedFx);
 
-  const heartSeen = P.locator(".float-heart").first().waitFor({ timeout: 4000 }).then(() => true, () => false);
+  const heartSeen = P.locator(".float-heart")
+    .first()
+    .waitFor({ timeout: 4000 })
+    .then(
+      () => true,
+      () => false,
+    );
   await L.getByTestId("heart-button").click();
   check("A7 heart sent from laptop floats on phone", await heartSeen);
   await P.waitForTimeout(600);
@@ -169,7 +365,11 @@ async function run() {
   await L.waitForTimeout(1000);
   const lPlot5 = await stage(L, 5);
   const gPlot0 = await stage(G, 0);
-  check("G1 actions in another room do not leak", code2 !== code && lPlot5 === 0 && gPlot0 === 1, `room1 plot5=${lPlot5}, room2 plot0=${gPlot0}`);
+  check(
+    "G1 actions in another room do not leak",
+    code2 !== code && lPlot5 === 0 && gPlot0 === 1,
+    `room1 plot5=${lPlot5}, room2 plot0=${gPlot0}`,
+  );
   await ctxG.close();
 
   // ---------------- Test D: state consistency ----------------
@@ -180,7 +380,11 @@ async function run() {
     await L.waitForTimeout(500);
     if ((await stage(L, 2)) !== (await stage(P, 2))) agree = false;
   }
-  check("D1 simultaneous taps from two devices leave both screens identical", agree, `final=${await stage(L, 2)}/${await stage(P, 2)}`);
+  check(
+    "D1 simultaneous taps from two devices leave both screens identical",
+    agree,
+    `final=${await stage(L, 2)}/${await stage(P, 2)}`,
+  );
 
   // Protocol level: two sockets send the same transition in the same instant.
   const race = await protocolRace(code2Fresh);
@@ -190,7 +394,11 @@ async function run() {
   for (let i = 0; i < 12; i++) await P.getByTestId("plot-4").click({ delay: 0 });
   await waitStage(L, 4, 4, 15_000).catch(() => {});
   const v4 = [await stage(L, 4), await stage(P, 4)];
-  check("D2 rapid repeated taps end in a valid, shared state", v4[0] === 4 && v4[1] === 4, `laptop=${v4[0]} phone=${v4[1]}`);
+  check(
+    "D2 rapid repeated taps end in a valid, shared state",
+    v4[0] === 4 && v4[1] === 4,
+    `laptop=${v4[0]} phone=${v4[1]}`,
+  );
 
   // ---------------- Test E: connection recovery ----------------
   await ctxP.setOffline(true);
@@ -233,13 +441,24 @@ async function run() {
   const L2 = await ctxL.newPage(); // the laptop comes back the next morning
   await L2.goto(`/r/${code}`);
   await L2.getByTestId("garden").waitFor();
-  const wb = await L2.getByTestId("welcome-back").waitFor({ timeout: 5000 }).then(() => true, () => false);
+  const wb = await L2.getByTestId("welcome-back")
+    .waitFor({ timeout: 5000 })
+    .then(
+      () => true,
+      () => false,
+    );
   await L2.screenshot({ path: `${SHOTS}05-welcome-back-laptop.png` });
   check("C2 returning player sees welcome-back celebration", wb);
   if (wb) await L2.getByTestId("welcome-back-done").click();
   const s = await Promise.all([0, 1, 2, 3, 4].map((i) => stage(L2, i)));
   check("B1 garden persists after all players disconnect", s.join() === "4,1,4,3,4", `stages=${s.join()}`);
-  check("C3 laptop can continue phone/tablet progress", await tapAndObserve(L2, L2, 3, 4).then(() => true, () => false));
+  check(
+    "C3 laptop can continue phone/tablet progress",
+    await tapAndObserve(L2, L2, 3, 4).then(
+      () => true,
+      () => false,
+    ),
+  );
   const total = await L2.getByTestId("bloomed-total").textContent();
   check("B2 total flower count persists", /4/.test(total ?? ""), total ?? "");
   await L2.screenshot({ path: `${SHOTS}06-garden-laptop.png` });
@@ -259,7 +478,12 @@ async function run() {
   const ctxBad = await phone();
   const B = await ctxBad.newPage();
   await B.goto("/r/ZZZZ2222");
-  const missing = await B.getByTestId("join-error").waitFor({ timeout: 5000 }).then(() => true, () => false);
+  const missing = await B.getByTestId("join-error")
+    .waitFor({ timeout: 5000 })
+    .then(
+      () => true,
+      () => false,
+    );
   check("X1 unknown garden code shows a friendly error", missing);
   await B.screenshot({ path: `${SHOTS}07-missing-room-phone.png` });
   await B.goto("/");
@@ -270,19 +494,21 @@ async function run() {
   const ctxT = await phone();
   const TT = await ctxT.newPage();
   await joinByLink(TT, code, "cat");
-  const boxes = await Promise.all(
-    ["plot-0", "plot-5", "heart-button"].map((id) => TT.getByTestId(id).boundingBox()),
-  );
+  const boxes = await Promise.all(["plot-0", "plot-5", "heart-button"].map((id) => TT.getByTestId(id).boundingBox()));
   const minSide = Math.min(...boxes.map((b) => Math.min(b.width, b.height)));
   check("U1 primary touch targets are at least 64px on a phone", minSide >= 64, `smallest=${Math.round(minSide)}px`);
   await ctxT.close();
+
+  await drawingTests();
 
   await browser.close();
 
   const sorted = [...latencies].sort((a, b) => a - b);
   const p50 = sorted[Math.floor(sorted.length / 2)];
   const max = sorted[sorted.length - 1];
-  console.log(`\nSync latency (tap on one device -> visible on another), n=${sorted.length}: median ${p50} ms, max ${max} ms`);
+  console.log(
+    `\nSync latency (tap on one device -> visible on another), n=${sorted.length}: median ${p50} ms, max ${max} ms`,
+  );
   check("A8 sync latency under 2 s", max < 2000, `max ${max} ms`);
 
   const failed = results.filter((r) => !r.ok);

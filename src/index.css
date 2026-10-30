@@ -534,3 +534,122 @@ button {
     display: none;
   }
 }
+
+/* ---------- Magic Drawing ---------- */
+@keyframes march {
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+.march {
+  animation: march 1.2s linear infinite;
+}
+
+@keyframes ink {
+  from {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+}
+.ink {
+  animation: ink 0.7s ease-out both;
+}
+
+@keyframes nudge-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+.nudge-y {
+  animation: nudge-y 1.4s ease-in-out infinite;
+}
+
+@keyframes fish-tail {
+  0%,
+  100% {
+    transform: rotate(-14deg);
+  }
+  50% {
+    transform: rotate(14deg);
+  }
+}
+.fish-tail {
+  animation: fish-tail 0.5s ease-in-out infinite;
+}
+@keyframes fish-fin {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.7);
+  }
+}
+.fish-fin {
+  animation: fish-fin 0.8s ease-in-out infinite;
+}
+@keyframes fish-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-22px) rotate(2deg);
+  }
+}
+.fish-bob {
+  animation: fish-bob 1.6s ease-in-out infinite;
+}
+
+@keyframes swim-across {
+  0% {
+    transform: translate(-150vw, -50%);
+  }
+  30% {
+    transform: translate(-50%, -55%);
+  }
+  70% {
+    transform: translate(-50%, -45%);
+  }
+  100% {
+    transform: translate(100vw, -50%);
+  }
+}
+.swim-across {
+  animation: swim-across 5.4s cubic-bezier(0.45, 0, 0.55, 1) both;
+}
+
+@keyframes bubble {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-110vh);
+    opacity: 0;
+  }
+}
+.bubble {
+  animation: bubble 3.2s ease-in infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swim-across {
+    animation: none !important;
+    transform: translate(-50%, -50%);
+  }
+  .bubble {
+    display: none;
+  }
+}

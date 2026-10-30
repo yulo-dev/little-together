@@ -17,6 +17,9 @@ import { setLang, useT } from "../i18n";
 import { setMuted, sfx, useMuted } from "../lib/sound";
 import type { Profile } from "../lib/storage";
 import { useRoom, type RoomFx } from "../lib/useRoom";
+import type { Creation } from "../../shared/drawing";
+import { CreationArt } from "../components/CreationArt";
+import { MagicDrawing, PaintIcon } from "./MagicDrawing";
 
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
@@ -36,6 +39,14 @@ export function RoomSession({
   const [plotFx, setPlotFx] = useState<Record<number, PlotFx>>({});
   const [hearts, setHearts] = useState<{ id: number; x: number; avatar: string; delay: number }[]>([]);
   const [visitorShow, setVisitorShow] = useState<GardenEvent["visitor"] | null>(null);
+  const [view, setView] = useState<"garden" | "draw">("garden");
+  const [creationShow, setCreationShow] = useState<{ c: Creation; key: number } | null>(null);
+  const playCreation = useCallback((c: Creation) => {
+    sfx.bloom();
+    const key = Date.now();
+    setCreationShow({ c, key });
+    window.setTimeout(() => setCreationShow((cur) => (cur?.key === key ? null : cur)), 5600);
+  }, []);
   const fxKey = useRef(0);
 
   const flash = useCallback((plotId: number, fx: Omit<PlotFx, "key">, ms = 1600) => {
@@ -65,12 +76,16 @@ export function RoomSession({
         flash(fx.plotId, { kind: "dance", avatar: fx.avatar as Avatar }, 1200);
         return;
       }
+      if (fx.kind === "drawDone") {
+        playCreation(fx.creation);
+        return;
+      }
       const e = fx.event;
       if (e.kind === "season") {
         sfx.sun();
         return;
       }
-      if (e.plotId == null) return;
+      if (e.kind === "fish" || e.plotId == null) return;
       const avatar = fx.mine ? undefined : e.avatar;
       if (e.kind === "bloom") {
         sfx.bloom();
@@ -87,7 +102,7 @@ export function RoomSession({
         }, 900);
       }
     },
-    [flash],
+    [flash, playCreation],
   );
 
   const room = useRoom(code, profile, onFx);
@@ -137,6 +152,63 @@ export function RoomSession({
     );
   }
 
+  const overlays = (
+    <>
+      {/* floating hearts, shared by everyone in the room */}
+      <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden" aria-hidden="true">
+        {hearts.map((h, i) => (
+          <span
+            key={h.id}
+            className="float-heart absolute bottom-0"
+            style={{ left: `${h.x}%`, animationDelay: `${h.delay}s` }}
+          >
+            {i % 6 === 0 ? (
+              <span className="relative block">
+                <Heart size={64} />
+                <span className="absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2">
+                  <Animal kind={h.avatar as Avatar} size={30} />
+                </span>
+              </span>
+            ) : (
+              <Heart size={36 + (i % 3) * 8} fill={i % 2 ? "#F7A8B8" : "#F2827F"} />
+            )}
+          </span>
+        ))}
+      </div>
+
+      {visitorShow && (
+        <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center" data-testid="visitor-show">
+          <div className="visitor-arrive">{VISITOR_ART[visitorShow]()}</div>
+        </div>
+      )}
+
+      {creationShow && (
+        <CreationShow key={creationShow.key} creation={creationShow.c} onDone={() => setCreationShow(null)} />
+      )}
+
+      {room.missed && <WelcomeBack events={room.missed} onDone={room.clearMissed} />}
+    </>
+  );
+
+  if (view === "draw") {
+    return (
+      <>
+        <MagicDrawing
+          me={profile}
+          status={room.status}
+          online={room.online}
+          drawing={room.drawing}
+          gallery={room.gallery}
+          onStroke={room.stroke}
+          onLoadGallery={room.loadGallery}
+          onPlay={playCreation}
+          onBack={() => setView("garden")}
+        />
+        {overlays}
+      </>
+    );
+  }
+
   return (
     <Scene>
       <div className="relative mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-3 pb-4 pt-3 sm:px-6">
@@ -166,7 +238,16 @@ export function RoomSession({
 
         {room.garden?.plots.every((p) => p.stage === BLOOMED) && <SeasonBanner onNew={room.newSeason} />}
 
-        <div className="flex items-end justify-center pt-2">
+        <div className="flex items-end justify-center gap-5 pt-2">
+          <button
+            type="button"
+            data-testid="open-drawing"
+            aria-label={t.draw}
+            onClick={() => setView("draw")}
+            className="grid h-20 w-20 place-items-center rounded-full border-[3px] border-[#4A3B33] bg-[#EFE6FB] shadow-[0_6px_0_#4A3B33] transition-transform active:translate-y-1 active:shadow-[0_2px_0_#4A3B33]"
+          >
+            <PaintIcon size={50} />
+          </button>
           <button
             type="button"
             data-testid="heart-button"
@@ -184,35 +265,7 @@ export function RoomSession({
         <VisitorLayer visitors={room.garden?.visitors ?? []} />
       </div>
 
-      {/* floating hearts, shared by everyone in the room */}
-      <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden" aria-hidden="true">
-        {hearts.map((h, i) => (
-          <span
-            key={h.id}
-            className="float-heart absolute bottom-0"
-            style={{ left: `${h.x}%`, animationDelay: `${h.delay}s` }}
-          >
-            {i % 6 === 0 ? (
-              <span className="relative block">
-                <Heart size={64} />
-                <span className="absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2">
-                  <Animal kind={h.avatar as Avatar} size={30} />
-                </span>
-              </span>
-            ) : (
-              <Heart size={36 + (i % 3) * 8} fill={i % 2 ? "#F7A8B8" : "#F2827F"} />
-            )}
-          </span>
-        ))}
-      </div>
-
-      {visitorShow && (
-        <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center" data-testid="visitor-show">
-          <div className="visitor-arrive">{VISITOR_ART[visitorShow]()}</div>
-        </div>
-      )}
-
-      {room.missed && <WelcomeBack events={room.missed} onDone={room.clearMissed} />}
+      {overlays}
     </Scene>
   );
 }
@@ -524,5 +577,37 @@ function Gone({ onLeave }: { onLeave: () => void }) {
         </button>
       </div>
     </Scene>
+  );
+}
+
+/** A finished drawing comes to life and swims across every screen in the room. */
+function CreationShow({ creation, onDone }: { creation: Creation; onDone: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[45] overflow-hidden bg-[#BFE3F2]/90" onClick={onDone} data-testid="creation-show">
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        {Array.from({ length: 10 }, (_, i) => (
+          <span
+            key={i}
+            className="bubble absolute bottom-[-40px] rounded-full border-[3px] border-[#5BA8DC] bg-[#FFFDF7]/60"
+            style={{
+              left: `${8 + i * 9}%`,
+              width: 14 + (i % 3) * 10,
+              height: 14 + (i % 3) * 10,
+              animationDelay: `${(i % 5) * 0.5}s`,
+            }}
+          />
+        ))}
+      </div>
+      <div className="swim-across absolute left-1/2 top-1/2 w-[min(80vw,460px)]">
+        <CreationArt strokes={creation.strokes} className="h-auto w-full" />
+      </div>
+      <div className="absolute bottom-10 left-1/2 flex -translate-x-1/2 gap-2">
+        {creation.artists.map((a) => (
+          <span key={a} className="hop-once rounded-full border-[3px] border-[#4A3B33] bg-[#FFFDF7]">
+            <Animal kind={a} size={56} />
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

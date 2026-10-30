@@ -20,6 +20,16 @@ import {
   type ServerMsg,
   type Stage,
 } from "../shared/protocol";
+import {
+  GALLERY_LIMIT,
+  canDraw,
+  newDrawing,
+  nextTurn,
+  stepCount,
+  validStroke,
+  type Creation,
+  type Drawing,
+} from "../shared/drawing";
 
 export interface Env {
   ASSETS: Fetcher;
@@ -29,7 +39,7 @@ export interface Env {
 
 const DAY_MS = 86_400_000;
 const EVENT_LOG_SIZE = 50;
-const MAX_MESSAGE_BYTES = 1024;
+const MAX_MESSAGE_BYTES = 2048; // fits one 80-point stroke with room to spare
 const MAX_SOCKETS = MAX_PLAYERS * 2; // headroom for reconnecting tabs
 
 interface Meta {
@@ -122,15 +132,20 @@ export class GardenRoom extends DurableObject<Env> {
   private meta: Meta = { created: false, createdAt: 0, lastActivity: 0 };
   private state: GardenState = emptyGarden();
   private events: GardenEvent[] = [];
+  private drawing: Drawing = newDrawing(crypto.randomUUID());
+  private galleryIds: string[] = [];
   private rate = new WeakMap<WebSocket, { tokens: number; ts: number }>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      const stored = await ctx.storage.get<unknown>(["meta", "state", "events"]);
+      const stored = await ctx.storage.get<unknown>(["meta", "state", "events", "drawing", "gallery"]);
       this.meta = (stored.get("meta") as Meta) ?? this.meta;
       this.state = (stored.get("state") as GardenState) ?? this.state;
       this.events = (stored.get("events") as GardenEvent[]) ?? [];
+      // Rooms created before Magic Drawing simply start with an empty canvas.
+      this.drawing = (stored.get("drawing") as Drawing) ?? this.drawing;
+      this.galleryIds = (stored.get("gallery") as string[]) ?? [];
     });
     // Answer keepalive pings without waking the object from hibernation.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
@@ -175,6 +190,8 @@ export class GardenRoom extends DurableObject<Env> {
       this.meta = { created: false, createdAt: 0, lastActivity: 0 };
       this.state = emptyGarden();
       this.events = [];
+      this.drawing = newDrawing(crypto.randomUUID());
+      this.galleryIds = [];
       return;
     }
     await this.ctx.storage.setAlarm(this.meta.lastActivity + this.retentionMs());
@@ -201,7 +218,7 @@ export class GardenRoom extends DurableObject<Env> {
       ws.serializeAttachment({ pid: msg.pid, avatar: msg.avatar } satisfies Attachment);
       const lastSeen = Number.isInteger(msg.lastSeen) ? msg.lastSeen : 0;
       const missed = lastSeen > 0 ? this.events.filter((e) => e.version > lastSeen && e.by !== msg.pid) : [];
-      this.send(ws, { t: "welcome", state: this.state, online: this.online(), missed });
+      this.send(ws, { t: "welcome", state: this.state, online: this.online(), missed, drawing: this.drawing });
       this.broadcast({ t: "presence", online: this.online() });
       return;
     }
@@ -213,6 +230,10 @@ export class GardenRoom extends DurableObject<Env> {
         return this.act(ws, { pid: me.pid, avatar: me.avatar }, msg);
       case "season":
         return this.newSeason(ws, me.pid, me.avatar, msg.aid);
+      case "stroke":
+        return this.stroke(ws, { pid: me.pid, avatar: me.avatar }, msg);
+      case "gallery":
+        return this.sendGallery(ws);
       case "heart":
         return this.broadcast({ t: "fx", kind: "heart", avatar: me.avatar });
       case "dance": {
@@ -309,6 +330,70 @@ export class GardenRoom extends DurableObject<Env> {
     this.broadcast({ t: "state", state: this.state, event, aid });
   }
 
+  // ----- Magic Drawing -----
+
+  private async stroke(
+    ws: WebSocket,
+    me: { pid: string; avatar: Avatar },
+    msg: Extract<ClientMsg, { t: "stroke" }>,
+  ): Promise<void> {
+    const aid = typeof msg.aid === "string" ? msg.aid.slice(0, 64) : "";
+    const reject = (reason: string) => this.send(ws, { t: "drawReject", aid, reason, drawing: this.drawing });
+    if (!validStroke(msg.color, msg.pts)) return reject("bad_stroke");
+    // Same optimistic-concurrency idea as the garden: the client names the
+    // drawing and step it saw, so two strokes racing for one step can't both land.
+    if (msg.drawingId !== this.drawing.id || msg.step !== this.drawing.step) return reject("stale");
+    const online = this.online();
+    if (!canDraw(this.drawing, me.pid, online)) return reject("not_your_turn");
+
+    const now = Date.now();
+    const strokes = [...this.drawing.strokes, { by: me.pid, avatar: me.avatar, color: msg.color, pts: msg.pts }];
+    const step = this.drawing.step + 1;
+
+    if (step < stepCount(this.drawing)) {
+      this.drawing = { ...this.drawing, strokes, step, turn: nextTurn(me.pid, online) };
+      this.meta = { ...this.meta, lastActivity: now };
+      await this.ctx.storage.put({ drawing: this.drawing, meta: this.meta });
+      await this.ctx.storage.setAlarm(now + this.retentionMs());
+      this.broadcast({ t: "draw", drawing: this.drawing, aid });
+      return;
+    }
+
+    // Finished: save the creation, start a fresh canvas, log it for Welcome Back.
+    const creation: Creation = {
+      id: this.drawing.id,
+      template: this.drawing.template,
+      strokes,
+      artists: [...new Set(strokes.map((s) => s.avatar))],
+      completedAt: now,
+    };
+    const ids = [...this.galleryIds, creation.id];
+    const dropped = ids.length > GALLERY_LIMIT ? ids.splice(0, ids.length - GALLERY_LIMIT) : [];
+    const fresh = newDrawing(crypto.randomUUID());
+    const state = { ...this.state, version: this.state.version + 1 };
+    const event: GardenEvent = {
+      version: state.version,
+      kind: "fish",
+      plotId: null,
+      by: me.pid,
+      avatar: me.avatar,
+      at: now,
+    };
+
+    this.drawing = fresh;
+    this.galleryIds = ids;
+    await this.commit(state, event, now, { drawing: fresh, gallery: ids, [`creation:${creation.id}`]: creation });
+    if (dropped.length) await this.ctx.storage.delete(dropped.map((id) => `creation:${id}`));
+    this.broadcast({ t: "drawDone", creation, drawing: fresh, aid });
+    this.broadcast({ t: "state", state: this.state, event, aid: "" });
+  }
+
+  private async sendGallery(ws: WebSocket) {
+    const found = await this.ctx.storage.get<Creation>(this.galleryIds.map((id) => `creation:${id}`));
+    const items = this.galleryIds.map((id) => found.get(`creation:${id}`)).filter((c): c is Creation => !!c);
+    this.send(ws, { t: "gallery", items });
+  }
+
   private pickPlant(state: GardenState): Plant {
     const counts = new Map<Plant, number>(PLANTS.map((p) => [p, 0]));
     for (const p of state.plots) if (p.plant && p.stage > 0) counts.set(p.plant, (counts.get(p.plant) ?? 0) + 1);
@@ -317,12 +402,12 @@ export class GardenRoom extends DurableObject<Env> {
     return options[Math.floor(Math.random() * options.length)];
   }
 
-  private async commit(state: GardenState, event: GardenEvent, now: number) {
+  private async commit(state: GardenState, event: GardenEvent, now: number, extra: Record<string, unknown> = {}) {
     this.state = state;
     this.events = [...this.events, event].slice(-EVENT_LOG_SIZE);
     this.meta = { ...this.meta, lastActivity: now };
     // Multi-key put is atomic: state, log and activity time move together.
-    await this.ctx.storage.put({ state: this.state, events: this.events, meta: this.meta });
+    await this.ctx.storage.put({ ...extra, state: this.state, events: this.events, meta: this.meta });
     await this.ctx.storage.setAlarm(now + this.retentionMs());
   }
 

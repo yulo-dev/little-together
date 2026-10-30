@@ -1,3 +1,5 @@
+import type { Creation, Drawing } from "./drawing";
+
 // Shared types and pure game rules used by both the Worker and the browser client.
 
 export const PLOT_COUNT = 6;
@@ -39,7 +41,7 @@ export interface GardenState {
   visitors: Visitor[];
 }
 
-export type EventKind = "plant" | "water" | "sun" | "bloom" | "season";
+export type EventKind = "plant" | "water" | "sun" | "bloom" | "season" | "fish";
 
 export interface GardenEvent {
   version: number;
@@ -65,7 +67,9 @@ export type ClientMsg =
   | { t: "act"; aid: string; plotId: number; from: Stage }
   | { t: "dance"; plotId: number }
   | { t: "heart" }
-  | { t: "season"; aid: string };
+  | { t: "season"; aid: string }
+  | { t: "stroke"; aid: string; drawingId: string; step: number; color: number; pts: number[] }
+  | { t: "gallery" };
 
 // ---------- server -> client ----------
 export type ServerMsg =
@@ -75,12 +79,18 @@ export type ServerMsg =
       online: OnlinePlayer[];
       /** events by other players since this player's last visit */
       missed: GardenEvent[];
+      /** current shared drawing (absent from servers older than Magic Drawing) */
+      drawing?: Drawing;
     }
   | { t: "state"; state: GardenState; event: GardenEvent; aid: string }
   | { t: "presence"; online: OnlinePlayer[] }
   | { t: "reject"; aid: string; reason: string; state: GardenState }
   | { t: "fx"; kind: "heart" | "dance"; avatar: Avatar; plotId?: number }
-  | { t: "error"; reason: string };
+  | { t: "error"; reason: string }
+  | { t: "draw"; drawing: Drawing; aid: string }
+  | { t: "drawReject"; aid: string; reason: string; drawing: Drawing }
+  | { t: "drawDone"; creation: Creation; drawing: Drawing; aid: string }
+  | { t: "gallery"; items: Creation[] };
 
 // ---------- rules ----------
 export type PlotAction = "plant" | "water" | "sun" | "bloom" | "dance";

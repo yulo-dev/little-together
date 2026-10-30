@@ -14,7 +14,19 @@ No accounts, no typing, no losing. Large tap targets, picture cues instead of in
 4. Everyone sees every change live. A flower grown by two different players gets a twin-heart celebration.
 5. Three flowers bring a butterfly; six bring a bee; ten bring a bird. They stay.
 6. The big heart button sends floating hearts to everyone in the garden, which is handy during a video call.
-7. Close the tab whenever. The garden is saved on the server and is waiting next time.
+7. The paintbrush opens **Magic Drawing**: draw a fish together, one line each (see below).
+8. Close the tab whenever. The garden is saved on the server and is waiting next time.
+
+## Magic Drawing
+
+A shared canvas where the family draws a fish together, taking turns, and then watches their own lines swim.
+
+- **Guided, four lines.** A dashed hint shows the next part: body, tail, fin, stripes. One line finishes a step, so a wobbly scribble or a single tap still counts.
+- **Turns that never block.** After you draw, the turn passes to the next player who is online. If you're alone, or the next player has left, anyone can draw.
+- **Their lines come alive.** The finished fish is built from the players' own strokes: the tail stroke wags, the fin stroke flaps, the body gets a soft fill, and only an eye, smile and cheeks are added. It swims across every screen in the room at once.
+- **Saved.** Creations go into the room's gallery (last 24), and finishing one shows up in Welcome Back for family who were away.
+
+Protocol: a stroke is sent once, on pointer-up, as `{ t: "stroke", drawingId, step, color, pts }` with points simplified to at most 80 and normalized to a 1000×1000 space, so a drawing looks the same on every screen and fits the 2 KB message cap. The room checks payload shape and bounds, turn ownership, and that `drawingId` and `step` match the current drawing, so two strokes racing for one step can't both land. The current drawing, the gallery index and each creation are stored under their own keys, separate from garden state, so drawings never inflate garden updates. Rooms created before this feature start with an empty canvas.
 
 ## Architecture
 
@@ -56,6 +68,8 @@ No accounts, no typing, no losing. Large tap targets, picture cues instead of in
 | `meta` | `created`, `createdAt`, `lastActivity` |
 | `state` | `version`, `plots[6]` (`stage` 0–4, `plant`, `helpers`, `updatedBy`, `updatedAt`), `bloomedTotal`, `season`, `visitors` |
 | `events` | last 50 of `{ version, kind, plotId, by, avatar, at, shared?, visitor? }` |
+| `drawing` | current Magic Drawing: `id`, `template`, `step`, `strokes`, `turn` |
+| `gallery`, `creation:<id>` | ids of saved creations (last 24) and one entry per creation |
 
 | Stored per device (localStorage) | Fields |
 | --- | --- |
@@ -73,9 +87,10 @@ No accounts, no typing, no losing. Large tap targets, picture cues instead of in
 
 ```
 shared/protocol.ts     message types, game rules, room-code helpers (used by both sides)
+shared/drawing.ts      Magic Drawing types, fish template, turn rules, stroke validation
 worker/index.ts        Worker routes + GardenRoom Durable Object
 src/lib/useRoom.ts     WebSocket client: reconnect, heartbeat, snapshots, effects
-src/screens/           Welcome, Join, Lobby, Garden, Welcome Back
+src/screens/           Welcome, Join, Lobby, Garden, Welcome Back, Magic Drawing
 src/components/        SVG animals, plants, tool icons, visitors, scene
 tests/                 end-to-end multiplayer acceptance tests (Playwright)
 ```
@@ -131,8 +146,13 @@ Each player is a separate browser context (separate storage and socket), emulati
 | E1–E4 | Offline state shown, missed changes arrive on reconnect, offline taps are not replayed, refresh restores |
 | G1 | Actions in one room never reach another |
 | X1, U1 | Unknown code shows a friendly error; primary touch targets ≥ 64 px on a phone |
+| M1–M3 | A stroke drawn on one device appears on the other; the turn passes; drawing out of turn is blocked |
+| M4–M5 | The finished fish animates on both devices and both canvases reset |
+| M6–M7 | If the next player leaves, the turn opens up; one player can finish alone |
+| M8 | Two sockets racing a stroke for the same step: exactly one lands; malformed strokes are refused |
+| M9–M11 | Creations persist after everyone leaves and can be replayed; the garden still works afterwards |
 
-Latest local run: **25/25 passed**, tap-to-other-screen latency median ~120 ms (local server). Persistence across a full server restart was also checked manually.
+Latest local run: **36/36 passed**. Tap-to-other-screen latency was about 120 ms median locally; a stroke appeared on the other device about 50 ms after pointer-up. The garden suite also passed 25/25 against the deployed Cloudflare URL. Persistence across a full server restart was checked manually.
 
 ### Known limitations
 
