@@ -4,21 +4,7 @@ import { Animal } from "../components/Animal";
 import { PlantArt } from "../components/PlantArt";
 import { Scene } from "../components/Scene";
 import { Butterfly } from "../components/Visitors";
-import { setLang, useT } from "../i18n";
-
-function LangToggle() {
-  const { t, lang } = useT();
-  return (
-    <button
-      type="button"
-      onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-      className="btn-ghost absolute right-4 top-4 z-10 text-sm"
-      aria-label={t.language}
-    >
-      {t.language}
-    </button>
-  );
-}
+import { useT } from "../i18n";
 
 export function Welcome({ onCreate, onJoin }: { onCreate: () => Promise<void>; onJoin: () => void }) {
   const { t } = useT();
@@ -38,7 +24,6 @@ export function Welcome({ onCreate, onJoin }: { onCreate: () => Promise<void>; o
 
   return (
     <Scene horizon="30%">
-      <LangToggle />
       <div className="mx-auto flex min-h-dvh max-w-md flex-col items-center px-6 pb-10 pt-14 text-center">
         <h1 className="font-display text-[2.75rem] font-semibold leading-none text-[#4A3B33] sm:text-6xl">
           Little Together
@@ -138,7 +123,6 @@ export function Join({
 
   return (
     <Scene calm>
-      <LangToggle />
       <form onSubmit={submit} className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-5 px-5 py-16">
         <div className="card p-5">
           <label htmlFor="code" className="mb-2 block text-sm text-[#6B5A4E]">

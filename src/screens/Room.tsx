@@ -13,7 +13,7 @@ import { Heart, Invite, Speaker } from "../components/Icons";
 import { Plot, type PlotFx } from "../components/Plot";
 import { Scene } from "../components/Scene";
 import { VISITOR_ART, VisitorLayer } from "../components/Visitors";
-import { setLang, useT } from "../i18n";
+import { useT } from "../i18n";
 import { setMuted, sfx, useMuted } from "../lib/sound";
 import type { Profile } from "../lib/storage";
 import { useRoom, type RoomFx } from "../lib/useRoom";
@@ -303,7 +303,7 @@ function TopBar({
   bloomed: number;
   status: string;
 }) {
-  const { t, lang } = useT();
+  const { t } = useT();
   const muted = useMuted();
   const [invite, setInvite] = useState(false);
   const prevCount = useRef(online.length);
@@ -357,14 +357,6 @@ function TopBar({
           aria-pressed={!muted}
         >
           <Speaker on={!muted} />
-        </button>
-        <button
-          type="button"
-          className={`${iconBtn} text-sm font-semibold`}
-          onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-          aria-label={t.language}
-        >
-          {lang === "zh" ? "EN" : "中"}
         </button>
         <button
           type="button"
