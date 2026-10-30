@@ -8,11 +8,14 @@ export const CRAYONS = ["#F08A4B", "#5BA8DC", "#F2827F", "#6FB36A", "#C3A6F0", "
 export const GALLERY_LIMIT = 24;
 export const POND_SIZE = 3; // fish shown swimming in the garden
 
-export type TemplateId = "fish";
+export type TemplateId = "fish" | "bunny" | "butterfly";
+export const TEMPLATE_IDS: TemplateId[] = ["fish", "bunny", "butterfly"];
+
+export type Part = "body" | "tail" | "fin" | "pattern" | "head" | "ears" | "wingL" | "wingR" | "antennae";
 
 export interface GuideStep {
   /** short key used for i18n and test ids */
-  part: "body" | "tail" | "fin" | "pattern";
+  part: Part;
   /** dashed SVG path shown as a hint, in 1000x1000 space */
   guide: string;
 }
@@ -23,6 +26,40 @@ export interface GuideStep {
  * uses to decide what wags (tail) and what flaps (fin).
  */
 export const TEMPLATES: Record<TemplateId, GuideStep[]> = {
+  // Sitting bunny facing right: the ears stroke wiggles and the whole bunny hops.
+  bunny: [
+    {
+      part: "body",
+      guide:
+        "M220 620 C220 470 330 420 460 430 C600 440 680 520 680 630 C680 760 560 820 440 815 C300 810 220 740 220 620 Z",
+    },
+    {
+      part: "head",
+      guide:
+        "M500 380 C500 290 570 240 640 240 C720 240 780 300 780 380 C780 460 720 520 640 520 C560 520 500 460 500 380 Z",
+    },
+    {
+      part: "ears",
+      guide:
+        "M590 255 C555 150 585 70 615 80 C650 95 650 190 625 250 M670 250 C680 140 730 80 760 100 C790 125 745 210 700 260",
+    },
+    { part: "tail", guide: "M170 640 C170 600 200 580 230 590 C265 600 270 650 245 675 C215 700 170 685 170 640 Z" },
+  ],
+  // Butterfly seen from above: each wing stroke flaps around the body.
+  butterfly: [
+    { part: "body", guide: "M500 300 L500 720" },
+    {
+      part: "wingL",
+      guide:
+        "M490 470 C380 260 180 250 190 420 C200 520 330 540 490 500 M490 525 C360 560 240 640 300 730 C360 790 460 680 490 560",
+    },
+    {
+      part: "wingR",
+      guide:
+        "M510 470 C620 260 820 250 810 420 C800 520 670 540 510 500 M510 525 C640 560 760 640 700 730 C640 790 540 680 510 560",
+    },
+    { part: "antennae", guide: "M495 300 Q455 210 420 185 M505 300 Q545 210 580 185" },
+  ],
   fish: [
     {
       part: "body",
@@ -61,8 +98,34 @@ export interface Creation {
   completedAt: number;
 }
 
-export function newDrawing(id: string): Drawing {
-  return { id, template: "fish", step: 0, strokes: [], turn: null };
+export function newDrawing(id: string, template: TemplateId = "fish"): Drawing {
+  return { id, template, step: 0, strokes: [], turn: null };
+}
+
+export function isTemplate(v: unknown): v is TemplateId {
+  return typeof v === "string" && (TEMPLATE_IDS as string[]).includes(v);
+}
+
+/** Viewport framing each template, for small icons. */
+export const TEMPLATE_VIEWBOX: Record<TemplateId, string> = {
+  fish: "100 180 780 560",
+  bunny: "130 40 700 800",
+  butterfly: "150 150 700 660",
+};
+
+/** Keep the newest `n` creations of each template, oldest first. */
+export function newestPerTemplate(list: Creation[], n: number): Creation[] {
+  const counts = new Map<TemplateId, number>();
+  const keep: Creation[] = [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    const c = list[i];
+    const k = counts.get(c.template) ?? 0;
+    if (k < n) {
+      keep.push(c);
+      counts.set(c.template, k + 1);
+    }
+  }
+  return keep.reverse();
 }
 
 export function stepCount(d: Pick<Drawing, "template">): number {

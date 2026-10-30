@@ -20,6 +20,9 @@ import { useRoom, type RoomFx } from "../lib/useRoom";
 import type { Creation } from "../../shared/drawing";
 import { CreationArt } from "../components/CreationArt";
 import { Pond } from "../components/Pond";
+import { MeadowBunnies, SkyButterflies } from "../components/Residents";
+import { PlayerAvatar, PlayerChip } from "../components/PlayerAvatar";
+import { useLocalPhase } from "../lib/time";
 import { MagicDrawing, PaintIcon } from "./MagicDrawing";
 
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -36,6 +39,7 @@ export function RoomSession({
   onLeave: () => void;
 }) {
   const { t } = useT();
+  const phase = useLocalPhase();
   const [inLobby, setInLobby] = useState(startInLobby);
   const [plotFx, setPlotFx] = useState<Record<number, PlotFx>>({});
   const [hearts, setHearts] = useState<{ id: number; x: number; avatar: string; delay: number }[]>([]);
@@ -201,6 +205,7 @@ export function RoomSession({
           drawing={room.drawing}
           gallery={room.gallery}
           onStroke={room.stroke}
+          onChooseTemplate={room.chooseTemplate}
           onLoadGallery={room.loadGallery}
           onPlay={playCreation}
           onBack={() => setView("garden")}
@@ -211,7 +216,7 @@ export function RoomSession({
   }
 
   return (
-    <Scene>
+    <Scene phase={phase}>
       <div className="relative mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-3 pb-4 pt-3 sm:px-6">
         <TopBar
           code={code}
@@ -237,11 +242,14 @@ export function RoomSession({
           )}
         </main>
 
-        <Pond fish={room.pond} onDraw={() => setView("draw")} />
+        <div className="relative">
+          <Pond fish={room.pond.filter((c) => c.template === "fish")} onDraw={() => setView("draw")} />
+          <MeadowBunnies bunnies={room.pond.filter((c) => c.template === "bunny")} />
+        </div>
 
         {room.garden?.plots.every((p) => p.stage === BLOOMED) && <SeasonBanner onNew={room.newSeason} />}
 
-        <div className="flex items-end justify-center gap-5 pt-2">
+        <div className="relative flex items-end justify-center gap-5 pt-2">
           <button
             type="button"
             data-testid="open-drawing"
@@ -266,6 +274,7 @@ export function RoomSession({
         </div>
 
         <VisitorLayer visitors={room.garden?.visitors ?? []} />
+        <SkyButterflies butterflies={room.pond.filter((c) => c.template === "butterfly")} />
       </div>
 
       {overlays}
@@ -309,20 +318,23 @@ function TopBar({
   return (
     <header className="relative z-20 flex items-start justify-between gap-2">
       <div className="flex flex-col gap-1.5">
-        <ul className="flex -space-x-2" aria-label={t.here} data-testid="online">
+        <ul className="flex gap-1.5" aria-label={t.here} data-testid="online">
           {online.map((p) => (
             <li
               key={p.pid}
               data-avatar={p.avatar}
               className={`pop-in rounded-full border-[3px] bg-[#FFFDF7] ${p.pid === me.pid ? "border-[#3E7D4F]" : "border-[#4A3B33]"}`}
-              title={t.animals[p.avatar]}
             >
-              <Animal kind={p.avatar} size={40} />
+              <PlayerAvatar player={p} size={40} />
             </li>
           ))}
         </ul>
         <div className="flex items-center gap-2 pl-1 text-sm text-[#4A3B33]">
-          {bloomed > 0 && <span data-testid="bloomed-total">{t.flowersGrown(bloomed)}</span>}
+          {bloomed > 0 && (
+            <span className="rounded-full bg-[#FFFDF7]/85 px-2.5 py-0.5" data-testid="bloomed-total">
+              {t.flowersGrown(bloomed)}
+            </span>
+          )}
           {status !== "open" && (
             <span
               className="flex items-center gap-1.5 rounded-full bg-[#FFFDF7]/90 px-2.5 py-0.5"
@@ -448,8 +460,9 @@ function Lobby({
   onEnter: () => void;
 }) {
   const { t } = useT();
+  const phase = useLocalPhase();
   return (
-    <Scene calm>
+    <Scene calm phase={phase}>
       <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-5 py-8">
         <div className="card p-6">
           <h1 className="mb-2 text-center font-display text-3xl text-[#4A3B33]">{t.lobbyTitle}</h1>
@@ -460,9 +473,8 @@ function Lobby({
           <p className="mb-3 text-sm text-[#6B5A4E]">{t.here}</p>
           <ul className="flex flex-wrap gap-2" data-testid="lobby-online">
             {(online.length ? online : [{ pid: me.pid, avatar: me.avatar }]).map((p) => (
-              <li key={p.pid} className="pop-in flex items-center gap-2 rounded-full bg-[#FFF6E3] py-1 pl-1 pr-3">
-                <Animal kind={p.avatar} size={36} />
-                <span className="text-sm text-[#4A3B33]">{t.animals[p.avatar]}</span>
+              <li key={p.pid} className="pop-in rounded-full bg-[#FFF6E3] py-1 pl-1 pr-3">
+                <PlayerChip player={p} />
               </li>
             ))}
           </ul>
@@ -602,7 +614,7 @@ function CreationShow({ creation, onDone }: { creation: Creation; onDone: () => 
         ))}
       </div>
       <div className="swim-across absolute left-1/2 top-1/2 w-[min(80vw,460px)]">
-        <CreationArt strokes={creation.strokes} className="h-auto w-full" />
+        <CreationArt strokes={creation.strokes} template={creation.template} className="h-auto w-full" />
       </div>
       <div className="absolute bottom-10 left-1/2 flex -translate-x-1/2 gap-2">
         {creation.artists.map((a) => (

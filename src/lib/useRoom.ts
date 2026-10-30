@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMsg, GardenEvent, GardenState, OnlinePlayer, ServerMsg, Stage } from "../../shared/protocol";
-import { POND_SIZE, type Creation, type Drawing } from "../../shared/drawing";
+import { POND_SIZE, newestPerTemplate, type Creation, type Drawing, type TemplateId } from "../../shared/drawing";
 import { newId, saveProfile, type Profile } from "./storage";
 
 export type Status = "connecting" | "open" | "reconnecting" | "gone";
@@ -62,7 +62,14 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
         attempt = 0;
         lastMsg = Date.now();
         const p = profileRef.current;
-        send({ t: "hello", pid: p.pid, avatar: p.avatar, lastSeen: p.lastSeen });
+        send({
+          t: "hello",
+          pid: p.pid,
+          avatar: p.avatar,
+          lastSeen: p.lastSeen,
+          // only the clock offset is shared, never a location
+          utcOffset: -new Date().getTimezoneOffset(),
+        });
         pingTimer = window.setInterval(() => {
           if (Date.now() - lastMsg > DEAD_MS) drop();
           else if (ws.readyState === WebSocket.OPEN) ws.send("ping");
@@ -118,7 +125,7 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
             const mine = myAids.current.delete(msg.aid);
             setDrawing(msg.drawing);
             setGallery((g) => (g ? [...g, msg.creation] : g));
-            setPond((p) => [...p.filter((c) => c.id !== msg.creation.id), msg.creation].slice(-POND_SIZE));
+            setPond((p) => newestPerTemplate([...p.filter((c) => c.id !== msg.creation.id), msg.creation], POND_SIZE));
             fxRef.current({ kind: "drawDone", creation: msg.creation, mine });
             break;
           }
@@ -235,6 +242,10 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
     return true;
   }, []);
   const loadGallery = useCallback(() => send({ t: "gallery" }), []);
+  const chooseTemplate = useCallback(
+    (d: Drawing, template: TemplateId) => send({ t: "template", drawingId: d.id, template }),
+    [],
+  );
   const dance = useCallback((plotId: number) => send({ t: "dance", plotId }), []);
   const newSeason = useCallback(() => {
     const aid = newId();
@@ -256,6 +267,7 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
     gallery,
     pond,
     stroke,
+    chooseTemplate,
     loadGallery,
   };
 }

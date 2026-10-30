@@ -87,7 +87,7 @@ export function Pond({ fish, onDraw }: { fish: Creation[]; onDraw: () => void })
               }}
             >
               <span key={jumps[c.id] ?? 0} className={`block ${jumps[c.id] ? "fish-jump" : ""}`}>
-                <CreationArt strokes={c.strokes} className="h-20 w-20" weight={40} />
+                <CreationArt strokes={c.strokes} template={c.template} className="h-20 w-20" weight={40} />
               </span>
             </button>
           ))

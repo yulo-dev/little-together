@@ -8,6 +8,7 @@ import {
   VISITORS,
   emptyGarden,
   isAvatar,
+  isUtcOffset,
   isValidCode,
   normalizeCode,
   type Avatar,
@@ -23,6 +24,8 @@ import {
 import {
   GALLERY_LIMIT,
   POND_SIZE,
+  isTemplate,
+  newestPerTemplate,
   canDraw,
   newDrawing,
   nextTurn,
@@ -52,6 +55,7 @@ interface Meta {
 interface Attachment {
   pid: string | null;
   avatar: Avatar | null;
+  utcOffset?: number;
 }
 
 const json = (body: unknown, status = 200) =>
@@ -216,10 +220,14 @@ export class GardenRoom extends DurableObject<Env> {
     if (msg.t === "hello") {
       if (typeof msg.pid !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(msg.pid)) return;
       if (!isAvatar(msg.avatar)) return;
-      ws.serializeAttachment({ pid: msg.pid, avatar: msg.avatar } satisfies Attachment);
+      ws.serializeAttachment({
+        pid: msg.pid,
+        avatar: msg.avatar,
+        utcOffset: isUtcOffset(msg.utcOffset) ? msg.utcOffset : undefined,
+      } satisfies Attachment);
       const lastSeen = Number.isInteger(msg.lastSeen) ? msg.lastSeen : 0;
       const missed = lastSeen > 0 ? this.events.filter((e) => e.version > lastSeen && e.by !== msg.pid) : [];
-      const recent = await this.creations(this.galleryIds.slice(-POND_SIZE));
+      const recent = newestPerTemplate(await this.creations(this.galleryIds), POND_SIZE);
       this.send(ws, { t: "welcome", state: this.state, online: this.online(), missed, drawing: this.drawing, recent });
       this.broadcast({ t: "presence", online: this.online() });
       return;
@@ -236,6 +244,8 @@ export class GardenRoom extends DurableObject<Env> {
         return this.stroke(ws, { pid: me.pid, avatar: me.avatar }, msg);
       case "gallery":
         return this.sendGallery(ws);
+      case "template":
+        return this.chooseTemplate(ws, msg);
       case "heart":
         return this.broadcast({ t: "fx", kind: "heart", avatar: me.avatar });
       case "dance": {
@@ -371,7 +381,7 @@ export class GardenRoom extends DurableObject<Env> {
     };
     const ids = [...this.galleryIds, creation.id];
     const dropped = ids.length > GALLERY_LIMIT ? ids.splice(0, ids.length - GALLERY_LIMIT) : [];
-    const fresh = newDrawing(crypto.randomUUID());
+    const fresh = newDrawing(crypto.randomUUID(), this.drawing.template);
     const state = { ...this.state, version: this.state.version + 1 };
     const event: GardenEvent = {
       version: state.version,
@@ -388,6 +398,18 @@ export class GardenRoom extends DurableObject<Env> {
     if (dropped.length) await this.ctx.storage.delete(dropped.map((id) => `creation:${id}`));
     this.broadcast({ t: "drawDone", creation, drawing: fresh, aid });
     this.broadcast({ t: "state", state: this.state, event, aid: "" });
+  }
+
+  /** Pick what to draw. Only before the first line, so a drawing never changes shape midway. */
+  private async chooseTemplate(ws: WebSocket, msg: Extract<ClientMsg, { t: "template" }>) {
+    if (!isTemplate(msg.template)) return;
+    if (msg.drawingId !== this.drawing.id || this.drawing.step !== 0) {
+      return this.send(ws, { t: "drawReject", aid: "", reason: "stale", drawing: this.drawing });
+    }
+    if (this.drawing.template === msg.template) return;
+    this.drawing = { ...this.drawing, template: msg.template };
+    await this.ctx.storage.put({ drawing: this.drawing });
+    this.broadcast({ t: "draw", drawing: this.drawing, aid: "" });
   }
 
   private async creations(ids: string[]): Promise<Creation[]> {
@@ -438,7 +460,7 @@ export class GardenRoom extends DurableObject<Env> {
     for (const ws of this.ctx.getWebSockets()) {
       if (ws === exclude || ws.readyState !== WebSocket.OPEN) continue;
       const a = ws.deserializeAttachment() as Attachment;
-      if (a?.pid && a.avatar) seen.set(a.pid, { pid: a.pid, avatar: a.avatar });
+      if (a?.pid && a.avatar) seen.set(a.pid, { pid: a.pid, avatar: a.avatar, utcOffset: a.utcOffset });
     }
     return [...seen.values()];
   }

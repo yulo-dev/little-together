@@ -1,4 +1,4 @@
-import type { Creation, Drawing } from "./drawing";
+import type { Creation, Drawing, TemplateId } from "./drawing";
 
 // Shared types and pure game rules used by both the Worker and the browser client.
 
@@ -59,17 +59,40 @@ export interface GardenEvent {
 export interface OnlinePlayer {
   pid: string;
   avatar: Avatar;
+  /** minutes east of UTC on that player's device; drives their sun or moon */
+  utcOffset?: number;
+}
+
+// ---------- time of day ----------
+export type Phase = "dawn" | "day" | "dusk" | "night";
+
+export function phaseAtHour(h: number): Phase {
+  if (h >= 5 && h < 7) return "dawn";
+  if (h >= 7 && h < 17) return "day";
+  if (h >= 17 && h < 20) return "dusk";
+  return "night";
+}
+
+/** Local hour/minute for someone at `utcOffset` minutes east of UTC. */
+export function localTimeAt(utcOffset: number, now = Date.now()) {
+  const d = new Date(now + utcOffset * 60_000);
+  return { hour: d.getUTCHours(), minute: d.getUTCMinutes() };
+}
+
+export function isUtcOffset(v: unknown): v is number {
+  return Number.isInteger(v) && (v as number) >= -720 && (v as number) <= 840;
 }
 
 // ---------- client -> server ----------
 export type ClientMsg =
-  | { t: "hello"; pid: string; avatar: Avatar; lastSeen: number }
+  | { t: "hello"; pid: string; avatar: Avatar; lastSeen: number; utcOffset?: number }
   | { t: "act"; aid: string; plotId: number; from: Stage }
   | { t: "dance"; plotId: number }
   | { t: "heart" }
   | { t: "season"; aid: string }
   | { t: "stroke"; aid: string; drawingId: string; step: number; color: number; pts: number[] }
-  | { t: "gallery" };
+  | { t: "gallery" }
+  | { t: "template"; drawingId: string; template: TemplateId };
 
 // ---------- server -> client ----------
 export type ServerMsg =

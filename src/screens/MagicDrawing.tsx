@@ -3,17 +3,22 @@ import {
   CANVAS,
   CRAYONS,
   TEMPLATES,
+  TEMPLATE_IDS,
+  TEMPLATE_VIEWBOX,
   canDraw,
   simplify,
   strokePath,
   type Creation,
   type Drawing,
   type GuideStep,
+  type TemplateId,
 } from "../../shared/drawing";
 import type { OnlinePlayer } from "../../shared/protocol";
 import { Animal } from "../components/Animal";
 import { CreationArt } from "../components/CreationArt";
+import { PlayerAvatar } from "../components/PlayerAvatar";
 import { Scene } from "../components/Scene";
+import { useLocalPhase } from "../lib/time";
 import { useT } from "../i18n";
 import { sfx } from "../lib/sound";
 import type { Profile } from "../lib/storage";
@@ -28,13 +33,26 @@ interface Props {
   drawing: Drawing | null;
   gallery: Creation[] | null;
   onStroke: (d: Drawing, color: number, pts: number[]) => boolean;
+  onChooseTemplate: (d: Drawing, template: TemplateId) => void;
   onLoadGallery: () => void;
   onPlay: (c: Creation) => void;
   onBack: () => void;
 }
 
-export function MagicDrawing({ me, status, online, drawing, gallery, onStroke, onLoadGallery, onPlay, onBack }: Props) {
+export function MagicDrawing({
+  me,
+  status,
+  online,
+  drawing,
+  gallery,
+  onStroke,
+  onChooseTemplate,
+  onLoadGallery,
+  onPlay,
+  onBack,
+}: Props) {
   const { t } = useT();
+  const phase = useLocalPhase();
   const [color, setColor] = useState(() => (me.pid.charCodeAt(0) + me.pid.charCodeAt(1)) % CRAYONS.length);
   const [showGallery, setShowGallery] = useState(false);
 
@@ -54,7 +72,7 @@ export function MagicDrawing({ me, status, online, drawing, gallery, onStroke, o
     "grid h-14 min-w-14 place-items-center rounded-full border-[3px] border-[#4A3B33] bg-[#FFFDF7] px-3 shadow-[0_3px_0_#4A3B33] active:translate-y-0.5 active:shadow-none";
 
   return (
-    <Scene calm horizon="70%">
+    <Scene calm horizon="70%" phase={phase}>
       <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col items-center gap-3 px-3 pb-5 pt-3">
         <header className="flex w-full items-center justify-between gap-2">
           <button
@@ -77,7 +95,7 @@ export function MagicDrawing({ me, status, online, drawing, gallery, onStroke, o
                     turn ? "scale-110 border-[#FFC93C] shadow-[0_0_0_4px_#FFE9A0]" : "border-[#4A3B33]"
                   }`}
                 >
-                  <Animal kind={p.avatar} size={40} />
+                  <PlayerAvatar player={p} size={40} />
                 </li>
               );
             })}
@@ -98,7 +116,18 @@ export function MagicDrawing({ me, status, online, drawing, gallery, onStroke, o
 
         {drawing && step && (
           <div className="flex items-center gap-3" aria-live="polite">
-            <StepDots steps={steps} current={drawing.step} />
+            {drawing.step === 0 ? (
+              <TemplatePicker
+                current={drawing.template}
+                disabled={status !== "open"}
+                onPick={(tpl) => {
+                  sfx.dance();
+                  onChooseTemplate(drawing, tpl);
+                }}
+              />
+            ) : (
+              <StepDots template={drawing.template} steps={steps} current={drawing.step} />
+            )}
           </div>
         )}
 
@@ -204,7 +233,7 @@ export function MagicDrawing({ me, status, online, drawing, gallery, onStroke, o
                       }}
                       className="flex w-full flex-col items-center rounded-3xl border-[3px] border-[#4A3B33]/20 bg-[#EAF6FB] p-2 active:scale-95"
                     >
-                      <CreationArt strokes={c.strokes} className="h-28 w-28" weight={30} />
+                      <CreationArt strokes={c.strokes} template={c.template} className="h-28 w-28" weight={30} />
                       <span className="flex -space-x-1">
                         {c.artists.map((a) => (
                           <Animal key={a} kind={a} size={24} />
@@ -298,6 +327,7 @@ function Canvas({
         data-testid="canvas"
         data-step={drawing.step}
         data-strokes={drawing.strokes.length}
+        data-template={drawing.template}
         data-my-turn={enabled}
         className={`card block aspect-square w-full touch-none select-none ${enabled ? "cursor-crosshair" : "cursor-not-allowed"}`}
         style={{ background: "#FFFDF7" }}
@@ -350,7 +380,43 @@ function Canvas({
   );
 }
 
-function StepDots({ steps, current }: { steps: GuideStep[]; current: number }) {
+/** Before the first line: pick what to draw. Big pictures, no words needed. */
+function TemplatePicker({
+  current,
+  disabled,
+  onPick,
+}: {
+  current: TemplateId;
+  disabled: boolean;
+  onPick: (t: TemplateId) => void;
+}) {
+  const { t } = useT();
+  return (
+    <div className="flex items-center gap-3" role="radiogroup" aria-label={t.draw} data-testid="template-picker">
+      {TEMPLATE_IDS.map((id) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={current === id}
+          aria-label={t.templates[id]}
+          data-testid={`template-${id}`}
+          disabled={disabled}
+          onClick={() => onPick(id)}
+          className={`grid place-items-center rounded-2xl border-[3px] bg-[#FFFDF7] transition-all ${
+            current === id
+              ? "h-[72px] w-[72px] -translate-y-0.5 border-[#4A3B33] bg-[#FFE9A0] shadow-[0_4px_0_#4A3B33]"
+              : "h-16 w-16 border-[#4A3B33]/40 shadow-[0_3px_0_rgba(74,59,51,0.4)]"
+          }`}
+        >
+          <MiniTemplate template={id} size={current === id ? 54 : 46} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StepDots({ template, steps, current }: { template: TemplateId; steps: GuideStep[]; current: number }) {
   const { t } = useT();
   return (
     <ol className="flex items-center gap-2" aria-label={t.drawStep[steps[current].part]} data-testid="steps">
@@ -362,25 +428,39 @@ function StepDots({ steps, current }: { steps: GuideStep[]; current: number }) {
           } ${i < current ? "bg-[#E3F3DA]" : ""}`}
           title={t.drawStep[s.part]}
         >
-          <MiniFish part={i} size={i === current ? 48 : 30} done={i < current} />
+          <MiniTemplate template={template} part={i} size={i === current ? 48 : 30} done={i < current} />
         </li>
       ))}
     </ol>
   );
 }
 
-/** The whole template in grey, with the part for this step highlighted. */
-function MiniFish({ part, size, done }: { part: number; size: number; done: boolean }) {
-  const steps = TEMPLATES.fish;
+/**
+ * The template as a small picture. With `part`, that step is highlighted and
+ * the rest is grey; without it, the whole animal is drawn in color.
+ */
+function MiniTemplate({
+  template,
+  part,
+  size,
+  done = false,
+}: {
+  template: TemplateId;
+  part?: number;
+  size: number;
+  done?: boolean;
+}) {
+  const steps = TEMPLATES[template];
+  const whole = part === undefined;
   return (
-    <svg viewBox="100 180 780 560" width={size} height={size} aria-hidden="true">
+    <svg viewBox={TEMPLATE_VIEWBOX[template]} width={size} height={size} aria-hidden="true">
       {steps.map((s, i) => (
         <path
           key={s.part}
           d={s.guide}
-          fill={i < 2 && i === part ? "#FFE9A0" : "none"}
-          stroke={i === part ? (done ? "#6FB36A" : "#F08A4B") : "#CDBFB3"}
-          strokeWidth={i === part ? 44 : 26}
+          fill={(whole || i === part) && s.guide.endsWith("Z") ? "#FFE9A0" : "none"}
+          stroke={whole ? "#F08A4B" : i === part ? (done ? "#6FB36A" : "#F08A4B") : "#CDBFB3"}
+          strokeWidth={whole || i === part ? 44 : 26}
           strokeLinecap="round"
           strokeLinejoin="round"
         />

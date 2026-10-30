@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import type { Avatar, EventKind } from "../shared/protocol";
+import type { Avatar, EventKind, Phase } from "../shared/protocol";
+import type { Part, TemplateId } from "../shared/drawing";
 import { load, save } from "./lib/storage";
 
 export type Lang = "zh" | "en";
@@ -53,18 +54,30 @@ const zh = {
     sun: "給了陽光",
     bloom: "讓花開了",
     season: "開始了新的一季",
-    fish: "畫完了一條魚",
+    fish: "畫完了一幅畫",
   } as Record<EventKind, string>,
   draw: "魔法畫畫",
   backToGarden: "回花園",
   ourCreations: "我們的作品",
   yourTurn: "換你畫！",
   waitingFor: (name: string) => `等${name}畫…`,
-  drawStep: { body: "畫身體", tail: "畫尾巴", fin: "畫背鰭", pattern: "畫花紋" },
+  drawStep: {
+    body: "畫身體",
+    tail: "畫尾巴",
+    fin: "畫背鰭",
+    pattern: "畫花紋",
+    head: "畫頭",
+    ears: "畫耳朵",
+    wingL: "畫左邊翅膀",
+    wingR: "畫右邊翅膀",
+    antennae: "畫觸角",
+  } as Record<Part, string>,
+  templates: { fish: "魚", bunny: "兔子", butterfly: "蝴蝶" } as Record<TemplateId, string>,
   crayon: (i: number) => `顏色 ${i + 1}`,
   noCreations: "還沒有作品。一起畫第一條魚吧！",
   drawAgain: "再畫一條",
   canvasLabel: "畫布：用手指或滑鼠畫一筆",
+  phases: { dawn: "清晨", day: "白天", dusk: "傍晚", night: "晚上" } as Record<Phase, string>,
   animals: { bunny: "小兔", bear: "小熊", cat: "小貓", fox: "小狐狸", duck: "小鴨", panda: "熊貓" } as Record<
     Avatar,
     string
@@ -121,18 +134,30 @@ const en: typeof zh = {
     sun: "gave sunshine",
     bloom: "made a flower bloom",
     season: "started a new season",
-    fish: "finished drawing a fish",
+    fish: "finished a drawing",
   },
   draw: "Magic drawing",
   backToGarden: "Back to the garden",
   ourCreations: "Our creations",
   yourTurn: "Your turn!",
   waitingFor: (name: string) => `Waiting for ${name}…`,
-  drawStep: { body: "Draw the body", tail: "Draw the tail", fin: "Draw the fin", pattern: "Draw some stripes" },
+  drawStep: {
+    body: "Draw the body",
+    tail: "Draw the tail",
+    fin: "Draw the fin",
+    pattern: "Draw some stripes",
+    head: "Draw the head",
+    ears: "Draw the ears",
+    wingL: "Draw a wing",
+    wingR: "Draw the other wing",
+    antennae: "Draw the antennae",
+  },
+  templates: { fish: "Fish", bunny: "Bunny", butterfly: "Butterfly" },
   crayon: (i: number) => `Color ${i + 1}`,
   noCreations: "No creations yet. Draw your first fish together!",
   drawAgain: "Draw another",
   canvasLabel: "Canvas: draw one line with your finger or mouse",
+  phases: { dawn: "early morning", day: "daytime", dusk: "evening", night: "night" },
   animals: { bunny: "Bunny", bear: "Bear", cat: "Cat", fox: "Fox", duck: "Duck", panda: "Panda" },
   privacy: "No sign-up. We never collect names, photos, or locations.",
 };

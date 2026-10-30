@@ -699,3 +699,136 @@ button {
     display: none;
   }
 }
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.twinkle {
+  animation: twinkle 2.6s ease-in-out infinite;
+}
+
+/* bunny and butterfly creations */
+@keyframes bunny-hop {
+  0%,
+  55%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  10% {
+    transform: translateY(0) scale(1.06, 0.92);
+  }
+  30% {
+    transform: translateY(-90px) scale(0.96, 1.05);
+  }
+  48% {
+    transform: translateY(0) scale(1.04, 0.95);
+  }
+}
+.bunny-hop {
+  animation: bunny-hop 1.4s ease-in-out infinite;
+}
+@keyframes bunny-ears {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
+.bunny-ears {
+  animation: bunny-ears 0.9s ease-in-out infinite;
+}
+@keyframes wing-flap {
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0.35);
+  }
+}
+.wing-flap {
+  animation: wing-flap 0.45s ease-in-out infinite;
+}
+@keyframes butterfly-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-30px) rotate(4deg);
+  }
+}
+.butterfly-float {
+  animation: butterfly-float 1.8s ease-in-out infinite;
+}
+
+/* bunnies hop along the meadow, butterflies drift through the sky */
+@keyframes meadow-hop {
+  0% {
+    left: -10%;
+    transform: scaleX(1);
+  }
+  47% {
+    left: 92%;
+    transform: scaleX(1);
+  }
+  50% {
+    left: 92%;
+    transform: scaleX(-1);
+  }
+  97% {
+    left: -10%;
+    transform: scaleX(-1);
+  }
+  100% {
+    left: -10%;
+    transform: scaleX(1);
+  }
+}
+.meadow-hop {
+  animation: meadow-hop 22s linear infinite;
+}
+@keyframes sky-drift {
+  0% {
+    left: -12%;
+    top: 0;
+  }
+  25% {
+    left: 22%;
+    top: 30px;
+  }
+  50% {
+    left: 50%;
+    top: -10px;
+  }
+  75% {
+    left: 78%;
+    top: 24px;
+  }
+  100% {
+    left: 108%;
+    top: 0;
+  }
+}
+.sky-drift {
+  animation: sky-drift 26s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meadow-hop {
+    animation: none !important;
+    left: calc(8% + var(--i, 0) * 30%);
+  }
+  .sky-drift {
+    animation: none !important;
+    left: calc(12% + var(--i, 0) * 30%);
+  }
+}

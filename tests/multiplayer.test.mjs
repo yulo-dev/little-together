@@ -16,7 +16,7 @@ try {
   pw = require(`${execSync("npm root -g").toString().trim()}/playwright`);
 }
 const { chromium, devices } = pw;
-const { FISH, drawOn } = await import("./draw-helpers.mjs");
+const { FISH, BUNNY, BUTTERFLY, drawOn } = await import("./draw-helpers.mjs");
 import { mkdirSync } from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:8787";
@@ -311,6 +311,139 @@ async function drawingTests() {
   await ctxN.close();
 }
 
+// ---------------- Time zones, bunnies and butterflies ----------------
+function expectedPhase(timeZone) {
+  const h = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(new Date()),
+  );
+  if (h >= 5 && h < 7) return "dawn";
+  if (h >= 7 && h < 17) return "day";
+  if (h >= 17 && h < 20) return "dusk";
+  return "night";
+}
+
+async function finishDrawing(actors, shapes) {
+  for (let i = 0; i < 4; i++) {
+    const actor = actors[i % actors.length];
+    await drawOn(actor, shapes[i]);
+    if (i < 3) await actor.waitForSelector(`[data-testid="canvas"][data-strokes="${i + 1}"]`, { timeout: 5000 });
+  }
+}
+
+async function timeAndAnimalTests() {
+  const ctxS = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    baseURL: BASE,
+    timezoneId: "America/Los_Angeles",
+  });
+  const ctxT = await browser.newContext({
+    ...devices["iPhone 13"],
+    defaultBrowserType: undefined,
+    baseURL: BASE,
+    timezoneId: "Asia/Taipei",
+  });
+  const S = await ctxS.newPage();
+  const T = await ctxT.newPage();
+  const code = await createRoom(S);
+  await pickAndEnter(S, "bunny");
+  await joinByLink(T, code, "bear");
+  await S.waitForSelector('[data-testid="online"] li:nth-child(2)');
+
+  const wantS = expectedPhase("America/Los_Angeles");
+  const wantT = expectedPhase("Asia/Taipei");
+  const skyS = await S.getByTestId("scene").getAttribute("data-phase");
+  const skyT = await T.getByTestId("scene").getAttribute("data-phase");
+  check(
+    "T1 each device's sky follows its own local time",
+    skyS === wantS && skyT === wantT,
+    `Seattle=${skyS} Taipei=${skyT}`,
+  );
+  const seenByS = await S.locator('[data-testid="online"] [data-avatar="bear"] [data-phase]').getAttribute(
+    "data-phase",
+  );
+  const seenByT = await T.locator('[data-testid="online"] [data-avatar="bunny"] [data-phase]').getAttribute(
+    "data-phase",
+  );
+  check(
+    "T2 each player's avatar shows the other's local sun or moon",
+    seenByS === wantT && seenByT === wantS,
+    `bear(Taipei)=${seenByS} bunny(Seattle)=${seenByT}`,
+  );
+
+  await S.getByTestId("open-drawing").click();
+  await T.getByTestId("open-drawing").click();
+  await Promise.all([S.getByTestId("canvas").waitFor(), T.getByTestId("canvas").waitFor()]);
+  await T.getByTestId("template-bunny").click();
+  const synced = await S.waitForSelector('[data-testid="canvas"][data-template="bunny"]', { timeout: 4000 }).then(
+    () => true,
+    () => false,
+  );
+  check("M14 choosing what to draw syncs to the other device", synced);
+
+  await finishDrawing([T, S], BUNNY);
+  await S.getByTestId("creation-show").waitFor({ timeout: 6000 });
+  await S.getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+  await T.getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+  await S.getByTestId("back-to-garden").click();
+  const bunnies = await S.getByTestId("meadow-bunny").count();
+  check("M15 a finished bunny hops in the garden", bunnies === 1, `bunnies=${bunnies}`);
+  await S.getByTestId("open-drawing").click();
+  await S.getByTestId("canvas").waitFor();
+
+  await S.getByTestId("template-butterfly").click();
+  await T.waitForSelector('[data-testid="canvas"][data-template="butterfly"]', { timeout: 4000 });
+  await finishDrawing([S, T], BUTTERFLY);
+  await T.getByTestId("creation-show").waitFor({ timeout: 6000 });
+  await T.getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+  await S.getByTestId("creation-show")
+    .click()
+    .catch(() => {});
+  await T.getByTestId("back-to-garden").click();
+  const flyers = await T.getByTestId("sky-butterfly").count();
+  check("M16 a finished butterfly flies over the garden", flyers === 1, `butterflies=${flyers}`);
+
+  // After the first line, the template is locked (protocol level).
+  const url = BASE.replace(/^http/, "ws") + `/api/rooms/${code}/ws`;
+  const ws = new WebSocket(url);
+  const inbox = [];
+  ws.onmessage = (e) => e.data !== "pong" && inbox.push(JSON.parse(e.data));
+  await new Promise((r) => (ws.onopen = r));
+  ws.send(JSON.stringify({ t: "hello", pid: "template-lock-check", avatar: "duck", lastSeen: 0 }));
+  await new Promise((r) => setTimeout(r, 400));
+  const d = inbox.find((m) => m.t === "welcome").drawing;
+  ws.send(JSON.stringify({ t: "stroke", aid: "s1", drawingId: d.id, step: 0, color: 0, pts: [100, 100, 200, 200] }));
+  await new Promise((r) => setTimeout(r, 300));
+  ws.send(JSON.stringify({ t: "template", drawingId: d.id, template: "fish" }));
+  await new Promise((r) => setTimeout(r, 300));
+  const rejected = inbox.some((m) => m.t === "drawReject" && m.reason === "stale");
+  const last = [...inbox].reverse().find((m) => m.drawing)?.drawing;
+  ws.close();
+  check(
+    "M17 the animal can't change after the first line",
+    rejected && last?.template === d.template,
+    `template=${last?.template}`,
+  );
+
+  // A fresh device sees the whole family of creatures.
+  const ctxN = await phone();
+  const N = await ctxN.newPage();
+  await joinByLink(N, code, "panda");
+  const counts = [await N.getByTestId("meadow-bunny").count(), await N.getByTestId("sky-butterfly").count()];
+  check(
+    "M18 a new device sees the bunny and butterfly",
+    counts[0] === 1 && counts[1] === 1,
+    `bunnies=${counts[0]} butterflies=${counts[1]}`,
+  );
+  await N.screenshot({ path: `${SHOTS}09-garden-creatures-phone.png` });
+  await Promise.all([ctxS.close(), ctxT.close(), ctxN.close()]);
+}
+
 async function run() {
   browser = await chromium.launch();
 
@@ -516,6 +649,7 @@ async function run() {
   await ctxT.close();
 
   await drawingTests();
+  await timeAndAnimalTests();
 
   await browser.close();
 

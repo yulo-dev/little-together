@@ -14,17 +14,22 @@ No accounts, no typing, no losing. Large tap targets, picture cues instead of in
 4. Everyone sees every change live. A flower grown by two different players gets a twin-heart celebration.
 5. Three flowers bring a butterfly; six bring a bee; ten bring a bird. They stay.
 6. The big heart button sends floating hearts to everyone in the garden, which is handy during a video call.
-7. The paintbrush opens **Magic Drawing**: draw a fish together, one line each (see below).
+7. The paintbrush opens **Magic Drawing**: pick a fish, bunny or butterfly and draw it together, one line each (see below).
 8. Close the tab whenever. The garden is saved on the server and is waiting next time.
+
+## Two skies, one garden
+
+Each device paints the garden in its own local time: dawn, day, dusk or a starry night. Every avatar also wears a tiny sun or moon for its owner's local time, and the lobby shows each person's clock. When it's evening in Seattle and morning in Taipei, a child can see at a glance that the other person just woke up. Only the device's UTC offset is shared; no location is requested or stored. `?sky=night` (or `dawn`, `day`, `dusk`) forces a sky for demos.
 
 ## Magic Drawing
 
-A shared canvas where the family draws a fish together, taking turns, and then watches their own lines swim.
+A shared canvas where the family draws an animal together, taking turns, and then watches their own lines come alive.
 
-- **Guided, four lines.** A dashed hint shows the next part: body, tail, fin, stripes. One line finishes a step, so a wobbly scribble or a single tap still counts.
+- **Pick an animal.** Before the first line, anyone can tap fish, bunny or butterfly. The choice syncs to everyone and locks once drawing starts.
+- **Guided, four lines.** A dashed hint shows the next part (fish: body, tail, fin, stripes; bunny: body, head, ears, tail; butterfly: body, two wings, antennae). One line finishes a step, so a wobbly scribble or a single tap still counts.
 - **Turns that never block.** After you draw, the turn passes to the next player who is online. If you're alone, or the next player has left, anyone can draw.
-- **Their lines come alive.** The finished fish is built from the players' own strokes: the tail stroke wags, the fin stroke flaps, the body gets a soft fill, and only an eye, smile and cheeks are added. It swims across every screen in the room at once.
-- **Saved, and alive in the garden.** Creations go into the room's gallery (last 24). The three newest swim back and forth in the garden pond; tap one and it jumps. Finishing a fish also shows up in Welcome Back for family who were away. An empty pond shows a dotted fish and opens Magic Drawing.
+- **Their lines come alive.** The finished animal is built from the players' own strokes: a fish's tail wags and fin flaps, a bunny hops and wiggles its ears, a butterfly's wings flap. Only small faces are added. It plays across every screen in the room at once.
+- **Saved, and alive in the garden.** Creations go into the room's gallery (last 24). The three newest of each kind live in the garden: fish swim in the pond (tap one and it jumps), bunnies hop along the bank, butterflies drift across the sky. Finishing a fish also shows up in Welcome Back for family who were away. An empty pond shows a dotted fish and opens Magic Drawing.
 
 Protocol: a stroke is sent once, on pointer-up, as `{ t: "stroke", drawingId, step, color, pts }` with points simplified to at most 80 and normalized to a 1000×1000 space, so a drawing looks the same on every screen and fits the 2 KB message cap. The room checks payload shape and bounds, turn ownership, and that `drawingId` and `step` match the current drawing, so two strokes racing for one step can't both land. The current drawing, the gallery index and each creation are stored under their own keys, separate from garden state, so drawings never inflate garden updates. Rooms created before this feature start with an empty canvas.
 
@@ -152,8 +157,10 @@ Each player is a separate browser context (separate storage and socket), emulati
 | M8 | Two sockets racing a stroke for the same step: exactly one lands; malformed strokes are refused |
 | M9–M11 | Creations persist after everyone leaves and can be replayed; the garden still works afterwards |
 | M12–M13 | A finished fish appears in the garden pond and jumps when tapped; a new device sees the same pond |
+| M14–M18 | The chosen animal syncs; bunnies hop and butterflies fly in the garden; the animal is locked after the first line; a new device sees them |
+| T1–T2 | A Seattle laptop and a Taipei phone each get their own sky, and each sees the other's sun or moon |
 
-Latest local run: **38/38 passed**. Tap-to-other-screen latency was about 120 ms median locally; a stroke appeared on the other device about 50 ms after pointer-up. The garden suite also passed 25/25 against the deployed Cloudflare URL. Persistence across a full server restart was checked manually.
+Latest local run: **45/45 passed**. Tap-to-other-screen latency was about 120 ms median locally; a stroke appeared on the other device about 50 ms after pointer-up. The garden suite also passed 25/25 against the deployed Cloudflare URL. Persistence across a full server restart was checked manually.
 
 ### Known limitations
 
