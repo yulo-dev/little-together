@@ -81,6 +81,8 @@ export type ServerMsg =
       missed: GardenEvent[];
       /** current shared drawing (absent from servers older than Magic Drawing) */
       drawing?: Drawing;
+      /** the most recent finished creations, which live in the garden pond */
+      recent?: Creation[];
     }
   | { t: "state"; state: GardenState; event: GardenEvent; aid: string }
   | { t: "presence"; online: OnlinePlayer[] }

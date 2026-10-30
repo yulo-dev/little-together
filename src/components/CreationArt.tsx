@@ -12,10 +12,13 @@ export function CreationArt({
   strokes,
   alive = true,
   className = "",
+  weight = WIDTH,
 }: {
   strokes: Stroke[];
   alive?: boolean;
   className?: string;
+  /** line width in canvas units; thicker reads better at small sizes */
+  weight?: number;
 }) {
   const [body, tail, fin, ...pattern] = strokes;
   const bb = body && body.pts.length >= 4 ? bbox(body.pts) : null;
@@ -35,20 +38,20 @@ export function CreationArt({
             className={alive ? "fish-tail" : ""}
             style={{ transformOrigin: `${tb!.maxX}px ${(tb!.minY + tb!.maxY) / 2}px`, transformBox: "view-box" }}
           >
-            <Line s={tail} fill />
+            <Line s={tail} fill w={weight} />
           </g>
         )}
-        {body && <Line s={body} fill />}
+        {body && <Line s={body} fill w={weight} />}
         {fin && (
           <g
             className={alive ? "fish-fin" : ""}
             style={{ transformOrigin: `${(fb!.minX + fb!.maxX) / 2}px ${fb!.maxY}px`, transformBox: "view-box" }}
           >
-            <Line s={fin} />
+            <Line s={fin} w={weight} />
           </g>
         )}
         {pattern.map((p, i) => (
-          <Line key={i} s={p} />
+          <Line key={i} s={p} w={weight} />
         ))}
         {body && (
           <g>
@@ -77,13 +80,13 @@ export function CreationArt({
   );
 }
 
-function Line({ s, fill = false }: { s: Stroke; fill?: boolean }) {
+function Line({ s, fill = false, w }: { s: Stroke; fill?: boolean; w: number }) {
   const color = CRAYONS[s.color] ?? CRAYONS[0];
   return (
     <path
       d={strokePath(s.pts)}
       stroke={color}
-      strokeWidth={WIDTH}
+      strokeWidth={w}
       strokeLinecap="round"
       strokeLinejoin="round"
       fill={fill ? color : "none"}

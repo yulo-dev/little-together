@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMsg, GardenEvent, GardenState, OnlinePlayer, ServerMsg, Stage } from "../../shared/protocol";
-import type { Creation, Drawing } from "../../shared/drawing";
+import { POND_SIZE, type Creation, type Drawing } from "../../shared/drawing";
 import { newId, saveProfile, type Profile } from "./storage";
 
 export type Status = "connecting" | "open" | "reconnecting" | "gone";
@@ -26,6 +26,7 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
   const [missed, setMissed] = useState<GardenEvent[] | null>(null);
   const [drawing, setDrawing] = useState<Drawing | null>(null);
   const [gallery, setGallery] = useState<Creation[] | null>(null);
+  const [pond, setPond] = useState<Creation[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const fxRef = useRef(onFx);
@@ -84,6 +85,7 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
             setGarden(msg.state);
             setOnline(msg.online);
             if (msg.drawing) setDrawing(msg.drawing);
+            if (msg.recent) setPond(msg.recent);
             if (firstWelcome) {
               firstWelcome = false;
               setMissed(msg.missed.length ? msg.missed : null);
@@ -116,6 +118,7 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
             const mine = myAids.current.delete(msg.aid);
             setDrawing(msg.drawing);
             setGallery((g) => (g ? [...g, msg.creation] : g));
+            setPond((p) => [...p.filter((c) => c.id !== msg.creation.id), msg.creation].slice(-POND_SIZE));
             fxRef.current({ kind: "drawDone", creation: msg.creation, mine });
             break;
           }
@@ -251,6 +254,7 @@ export function useRoom(code: string, profile: Profile, onFx: (fx: RoomFx) => vo
     newSeason,
     drawing,
     gallery,
+    pond,
     stroke,
     loadGallery,
   };

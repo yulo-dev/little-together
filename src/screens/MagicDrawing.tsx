@@ -204,7 +204,7 @@ export function MagicDrawing({ me, status, online, drawing, gallery, onStroke, o
                       }}
                       className="flex w-full flex-col items-center rounded-3xl border-[3px] border-[#4A3B33]/20 bg-[#EAF6FB] p-2 active:scale-95"
                     >
-                      <CreationArt strokes={c.strokes} className="h-28 w-28" />
+                      <CreationArt strokes={c.strokes} className="h-28 w-28" weight={30} />
                       <span className="flex -space-x-1">
                         {c.artists.map((a) => (
                           <Animal key={a} kind={a} size={24} />

@@ -24,7 +24,7 @@ A shared canvas where the family draws a fish together, taking turns, and then w
 - **Guided, four lines.** A dashed hint shows the next part: body, tail, fin, stripes. One line finishes a step, so a wobbly scribble or a single tap still counts.
 - **Turns that never block.** After you draw, the turn passes to the next player who is online. If you're alone, or the next player has left, anyone can draw.
 - **Their lines come alive.** The finished fish is built from the players' own strokes: the tail stroke wags, the fin stroke flaps, the body gets a soft fill, and only an eye, smile and cheeks are added. It swims across every screen in the room at once.
-- **Saved.** Creations go into the room's gallery (last 24), and finishing one shows up in Welcome Back for family who were away.
+- **Saved, and alive in the garden.** Creations go into the room's gallery (last 24). The three newest swim back and forth in the garden pond; tap one and it jumps. Finishing a fish also shows up in Welcome Back for family who were away. An empty pond shows a dotted fish and opens Magic Drawing.
 
 Protocol: a stroke is sent once, on pointer-up, as `{ t: "stroke", drawingId, step, color, pts }` with points simplified to at most 80 and normalized to a 1000×1000 space, so a drawing looks the same on every screen and fits the 2 KB message cap. The room checks payload shape and bounds, turn ownership, and that `drawingId` and `step` match the current drawing, so two strokes racing for one step can't both land. The current drawing, the gallery index and each creation are stored under their own keys, separate from garden state, so drawings never inflate garden updates. Rooms created before this feature start with an empty canvas.
 
@@ -151,8 +151,9 @@ Each player is a separate browser context (separate storage and socket), emulati
 | M6–M7 | If the next player leaves, the turn opens up; one player can finish alone |
 | M8 | Two sockets racing a stroke for the same step: exactly one lands; malformed strokes are refused |
 | M9–M11 | Creations persist after everyone leaves and can be replayed; the garden still works afterwards |
+| M12–M13 | A finished fish appears in the garden pond and jumps when tapped; a new device sees the same pond |
 
-Latest local run: **36/36 passed**. Tap-to-other-screen latency was about 120 ms median locally; a stroke appeared on the other device about 50 ms after pointer-up. The garden suite also passed 25/25 against the deployed Cloudflare URL. Persistence across a full server restart was checked manually.
+Latest local run: **38/38 passed**. Tap-to-other-screen latency was about 120 ms median locally; a stroke appeared on the other device about 50 ms after pointer-up. The garden suite also passed 25/25 against the deployed Cloudflare URL. Persistence across a full server restart was checked manually.
 
 ### Known limitations
 

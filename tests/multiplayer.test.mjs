@@ -218,6 +218,20 @@ async function drawingTests() {
     .click()
     .catch(() => {});
 
+  // The finished fish moves into the garden pond.
+  await P.getByTestId("back-to-garden").click();
+  await P.getByTestId("pond").waitFor();
+  const pondP = await P.getByTestId("pond-fish").count();
+  await P.getByTestId("pond-fish").first().click({ force: true }); // it swims, so it is never "stable"
+  const jumped = await P.locator(".fish-jump").count();
+  check(
+    "M12 the finished fish swims in the garden pond and jumps when tapped",
+    pondP === 1 && jumped === 1,
+    `pond=${pondP}`,
+  );
+  await P.getByTestId("open-drawing").click();
+  await P.getByTestId("canvas").waitFor();
+
   // Turn holder leaves: the remaining player must never be stuck waiting.
   await drawOn(L, FISH[0]);
   await waitStrokes(P, 1);
@@ -284,6 +298,8 @@ async function drawingTests() {
 
   // Garden still works in the same room after drawing.
   await N.getByTestId("back-to-garden").click();
+  const pondN = await N.getByTestId("pond-fish").count();
+  check("M13 a new device sees the family's fish in the pond", pondN === 2, `pond=${pondN}`);
   await N.getByTestId("plot-0").click();
   check(
     "M11 garden still works after Magic Drawing",

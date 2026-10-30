@@ -19,6 +19,7 @@ import type { Profile } from "../lib/storage";
 import { useRoom, type RoomFx } from "../lib/useRoom";
 import type { Creation } from "../../shared/drawing";
 import { CreationArt } from "../components/CreationArt";
+import { Pond } from "../components/Pond";
 import { MagicDrawing, PaintIcon } from "./MagicDrawing";
 
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -220,10 +221,10 @@ export function RoomSession({
           status={room.status}
         />
 
-        <main className="relative flex flex-1 flex-col justify-end pb-2 pt-[16vh] sm:pt-[14vh]">
+        <main className="relative flex flex-1 flex-col justify-end pb-1 pt-[10vh] sm:pt-[8vh]">
           {room.garden ? (
             <div
-              className="mx-auto grid w-full max-w-[min(42rem,calc((100dvh-250px)*1.1))] grid-cols-3 gap-x-2 gap-y-2 sm:gap-x-6 sm:gap-y-4"
+              className="mx-auto grid w-full max-w-[min(42rem,calc((100dvh-350px)*1.1))] grid-cols-3 gap-x-2 gap-y-2 sm:gap-x-6 sm:gap-y-4"
               data-testid="garden"
               data-version={room.garden.version}
             >
@@ -235,6 +236,8 @@ export function RoomSession({
             <LoadingSprout />
           )}
         </main>
+
+        <Pond fish={room.pond} onDraw={() => setView("draw")} />
 
         {room.garden?.plots.every((p) => p.stage === BLOOMED) && <SeasonBanner onNew={room.newSeason} />}
 

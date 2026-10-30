@@ -22,6 +22,7 @@ import {
 } from "../shared/protocol";
 import {
   GALLERY_LIMIT,
+  POND_SIZE,
   canDraw,
   newDrawing,
   nextTurn,
@@ -218,7 +219,8 @@ export class GardenRoom extends DurableObject<Env> {
       ws.serializeAttachment({ pid: msg.pid, avatar: msg.avatar } satisfies Attachment);
       const lastSeen = Number.isInteger(msg.lastSeen) ? msg.lastSeen : 0;
       const missed = lastSeen > 0 ? this.events.filter((e) => e.version > lastSeen && e.by !== msg.pid) : [];
-      this.send(ws, { t: "welcome", state: this.state, online: this.online(), missed, drawing: this.drawing });
+      const recent = await this.creations(this.galleryIds.slice(-POND_SIZE));
+      this.send(ws, { t: "welcome", state: this.state, online: this.online(), missed, drawing: this.drawing, recent });
       this.broadcast({ t: "presence", online: this.online() });
       return;
     }
@@ -388,10 +390,14 @@ export class GardenRoom extends DurableObject<Env> {
     this.broadcast({ t: "state", state: this.state, event, aid: "" });
   }
 
+  private async creations(ids: string[]): Promise<Creation[]> {
+    if (ids.length === 0) return [];
+    const found = await this.ctx.storage.get<Creation>(ids.map((id) => `creation:${id}`));
+    return ids.map((id) => found.get(`creation:${id}`)).filter((c): c is Creation => !!c);
+  }
+
   private async sendGallery(ws: WebSocket) {
-    const found = await this.ctx.storage.get<Creation>(this.galleryIds.map((id) => `creation:${id}`));
-    const items = this.galleryIds.map((id) => found.get(`creation:${id}`)).filter((c): c is Creation => !!c);
-    this.send(ws, { t: "gallery", items });
+    this.send(ws, { t: "gallery", items: await this.creations(this.galleryIds) });
   }
 
   private pickPlant(state: GardenState): Plant {

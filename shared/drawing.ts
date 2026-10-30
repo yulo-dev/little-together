@@ -6,6 +6,7 @@ export const CANVAS = 1000;
 export const MAX_POINTS = 80; // per stroke, after client-side simplification
 export const CRAYONS = ["#F08A4B", "#5BA8DC", "#F2827F", "#6FB36A", "#C3A6F0", "#FFC93C"] as const;
 export const GALLERY_LIMIT = 24;
+export const POND_SIZE = 3; // fish shown swimming in the garden
 
 export type TemplateId = "fish";
 
